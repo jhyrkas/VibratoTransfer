@@ -6,12 +6,9 @@
 //
 
 #include "Biquad.hpp"
-Biquad::Biquad(float b_coefs[3], float a_coefs[2]) {
-    b[0] = b_coefs[0];
-    b[1] = b_coefs[1];
-    b[2] = b_coefs[2];
-    a[0] = a_coefs[0];
-    a[1] = a_coefs[1];
+Biquad::Biquad(float _b0, float _b1, float _b2, float _a1, float _a2) :
+b0(_b0), b1(_b1), b2(_b2), a1(_a1), a2(_a2)
+{
     b_zi[0] = 0; b_zi[1] = 0;
     a_zi[0] = 0; a_zi[1] = 0;
 }
@@ -21,11 +18,22 @@ Biquad::~Biquad() {
 }
 
 float Biquad::processSample(float sample) {
-    float outp = b[0] * sample + b[1] * b_zi[0] + b[2] * b_zi[1] -
-    a[0] * a_zi[0] - a[1] * a_zi[1];
+    float outp = b0 * sample + b1 * b_zi[0] + b2 * b_zi[1] -
+    a1 * a_zi[0] - a2 * a_zi[1];
     b_zi[1] = b_zi[0];
     b_zi[0] = sample;
     a_zi[1] = a_zi[0];
     a_zi[0] = outp;
     return outp;
+}
+
+// TODO: maybe in the future we allow the zi to stick around?
+void Biquad::setParams(float _b0, float _b1, float _b2, float _a1, float _a2) {
+    b0 = _b0;
+    b1 = _b1;
+    b2 = _b2;
+    a1 = _a1;
+    a2 = _a2;
+    b_zi[0] = 0; b_zi[1] = 0;
+    a_zi[0] = 0; a_zi[1] = 0;
 }

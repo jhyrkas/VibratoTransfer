@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <JUCERPROJECT id="mGdVKg" name="VibratoTransfer" projectType="audioplug" useAppConfig="0"
-              addUsingNamespaceToJuceHeader="0" displaySplashScreen="1" jucerFormatVersion="1">
+              addUsingNamespaceToJuceHeader="0" displaySplashScreen="1" jucerFormatVersion="1"
+              cppLanguageStandard="20">
   <MAINGROUP id="aAsmxH" name="VibratoTransfer">
     <GROUP id="{4883BCC0-29EF-39E3-4431-321F5A7F8740}" name="Source">
       <FILE id="KddY43" name="PluginProcessor.cpp" compile="1" resource="0"
