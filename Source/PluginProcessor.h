@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <math.h>
 #include <numbers>
 #include <JuceHeader.h>
 #include "Biquad.hpp"
@@ -72,7 +73,7 @@ private:
     int del_length_mask = 4095;
     float del_buffer[4096]; // TODO: use DEFINE for del_length?
     int write_pointer = 512; // initial delay offset
-    int read_pointer = 0;
+    float read_pointer = 0;
     
     // f0 business
     int Nfft = 2048; // for pitch detection
@@ -123,6 +124,8 @@ private:
     int onset_time_blocks; // set in prepareToPlay using fs
     bool in_vibrato = false; // set once we are analyzing vibrato
     int vibrato_blocks_processed = 0; // increment as we process, set to 0 after offset
+    
+    float sin_phase = 0.f; // for sinusoidal vibrato...delate later
     
     // functions I added
     float fractional_delay_read(float index);

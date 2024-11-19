@@ -96,7 +96,7 @@ void VibratoTransferAudioProcessor::changeProgramName (int index, const juce::St
 //==============================================================================
 void VibratoTransferAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    fs = (float) samplesPerBlock;
+    fs = (float) sampleRate;
     T = 1.f / fs;
     blockSize = samplesPerBlock;
     averaging_frames = int((fs / slowest_vibrato) / samplesPerBlock);
@@ -183,6 +183,14 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             del_buffer[write_pointer] = channelData[i];
             write_pointer = (write_pointer + 1) & del_length_mask;
             
+            // read (right now do nothing...there should be a 512 sample delay)
+            channelData[i] = fractional_delay_read(read_pointer);
+            
+            // trying to do a regular vibrato, make sure that read pointer is always in range
+            read_pointer = (read_pointer + 1) - (0.1f * sinf(sin_phase));
+            read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
+            sin_phase += (twopi * T * 1);
+            sin_phase = sin_phase > twopi ? sin_phase - twopi : sin_phase;
         }
     }
 }
