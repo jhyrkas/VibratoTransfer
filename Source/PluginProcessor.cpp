@@ -11,17 +11,22 @@
 
 //==============================================================================
 VibratoTransferAudioProcessor::VibratoTransferAudioProcessor()
+:
 #ifndef JucePlugin_PreferredChannelConfigurations
-     : AudioProcessor (BusesProperties()
+     AudioProcessor (BusesProperties()
                      #if ! JucePlugin_IsMidiEffect
                       #if ! JucePlugin_IsSynth
                        .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
                       #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
-                       )
+                       ),
 #endif
+fft(2048)
 {
+    // zero out delay buffer
+    memset(del_buffer, 0, del_length * sizeof(float));
+    memset(f0_buffer, 0, 2*Nfft * sizeof(float));
 }
 
 VibratoTransferAudioProcessor::~VibratoTransferAudioProcessor()
@@ -93,8 +98,14 @@ void VibratoTransferAudioProcessor::changeProgramName (int index, const juce::St
 //==============================================================================
 void VibratoTransferAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    // Use this method as the place to do any pre-playback
-    // initialisation that you need..
+    fs = (float) samplesPerBlock;
+    T = 1.f / fs;
+    blockSize = samplesPerBlock;
+    averaging_frames = int((fs / slowest_vibrato) / samplesPerBlock);
+    // 100 ms - parameterize?
+    onset_time_blocks = int(0.1 * fs/samplesPerBlock);
+    
+    // TODO: memset delay and f0 bufs to 0?
 }
 
 void VibratoTransferAudioProcessor::releaseResources()
@@ -129,6 +140,9 @@ bool VibratoTransferAudioProcessor::isBusesLayoutSupported (const BusesLayout& l
 }
 #endif
 
+// TODO: right now we're just assuming everything is mono but the logic should
+// TODO: be redone a bit if we handle stereo or beyond.
+// TODO: also, one of these channels should be the sidechain?
 void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
@@ -150,11 +164,26 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     // the samples and the outer loop is handling the channels.
     // Alternatively, you can process the samples with the channels
     // interleaved by keeping the same state.
-    for (int channel = 0; channel < totalNumInputChannels; ++channel)
+    
+    // TODO: to get things started off, let's just start by buffering and make
+    // TODO: sure that we don't crash
+    int totalChans = totalNumInputChannels > 0 ? 1 : 0;
+    for (int channel = 0; channel < totalChans; ++channel)
     {
         auto* channelData = buffer.getWritePointer (channel);
-
-        // ..do something to the data...
+        
+        for (int i = 0; i < blockSize; ++i) {
+            // buffer f0 signal
+            f0_buffer[f0_pointer] = channelData[i];
+            f0_pointer = (f0_pointer + 1) & Nfft_mask;
+            // i would like to check n_buffered at the block level, not the
+            // loop level...is it guaranteed that blockSize is a factor of Nfft?
+            // probably not, so we should think about that
+            ++n_buffered;
+            // buffer delay signal
+            del_buffer[write_pointer] = channelData[i];
+            write_pointer = (write_pointer + 1) & del_length_mask;
+        }
     }
 }
 
@@ -188,4 +217,14 @@ void VibratoTransferAudioProcessor::setStateInformation (const void* data, int s
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new VibratoTransferAudioProcessor();
+}
+
+// functions I added
+float VibratoTransferAudioProcessor::fractional_delay_read(float index) {
+    // TODO: should we ever check that index is in range, or should that be done
+    // TODO: outside of the function?
+    int low = int(index);
+    int high = low == del_length - 1 ? 0 : low+1;
+    float high_frac = index - low;
+    return (1-high_frac) * del_buffer[low] + high_frac * del_buffer[high];
 }
