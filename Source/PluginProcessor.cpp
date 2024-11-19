@@ -11,18 +11,16 @@
 
 //==============================================================================
 VibratoTransferAudioProcessor::VibratoTransferAudioProcessor()
-:
 #ifndef JucePlugin_PreferredChannelConfigurations
-     AudioProcessor (BusesProperties()
+     : AudioProcessor (BusesProperties()
                      #if ! JucePlugin_IsMidiEffect
                       #if ! JucePlugin_IsSynth
                        .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
                       #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
-                       ),
+                       )
 #endif
-fft(2048)
 {
     // zero out delay buffer
     memset(del_buffer, 0, del_length * sizeof(float));
@@ -174,6 +172,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         
         for (int i = 0; i < blockSize; ++i) {
             // buffer f0 signal
+            
             f0_buffer[f0_pointer] = channelData[i];
             f0_pointer = (f0_pointer + 1) & Nfft_mask;
             // i would like to check n_buffered at the block level, not the
@@ -183,6 +182,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             // buffer delay signal
             del_buffer[write_pointer] = channelData[i];
             write_pointer = (write_pointer + 1) & del_length_mask;
+            
         }
     }
 }

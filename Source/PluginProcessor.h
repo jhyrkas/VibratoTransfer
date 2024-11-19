@@ -82,7 +82,8 @@ private:
     int f0_pointer = 0; // used to index into the f0 signal buffer
     int n_buffered = 0; // buffered samples after onset
     bool analyze_f0 = false; // set to true after onset TODO: figure this out
-    juce::dsp::FFT fft;
+    // TODO: this fft seems to not be initialized correctly or something of that nature?
+    //juce::dsp::FFT fft;
     
     // hilbert business
     Biquad hilbert_left[4] = {
