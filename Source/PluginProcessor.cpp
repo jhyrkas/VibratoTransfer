@@ -11,20 +11,23 @@
 
 //==============================================================================
 VibratoTransferAudioProcessor::VibratoTransferAudioProcessor()
+:
 #ifndef JucePlugin_PreferredChannelConfigurations
-     : AudioProcessor (BusesProperties()
+     AudioProcessor (BusesProperties()
                      #if ! JucePlugin_IsMidiEffect
                       #if ! JucePlugin_IsSynth
                        .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
                       #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
-                       )
+                       ),
 #endif
+fft(11) // order is the exponent (i.e. 2^11 = 2048)
 {
     // zero out delay buffer
     memset(del_buffer, 0, del_length * sizeof(float));
-    memset(f0_buffer, 0, 2*Nfft * sizeof(float));
+    memset(f0_buffer, 0, Nfft * sizeof(float));
+    memset(ac_buffer, 0, 2 * Nfft*sizeof(float));
 }
 
 VibratoTransferAudioProcessor::~VibratoTransferAudioProcessor()
@@ -102,7 +105,7 @@ void VibratoTransferAudioProcessor::prepareToPlay (double sampleRate, int sample
     averaging_frames = int((fs / slowest_vibrato) / samplesPerBlock);
     // 100 ms - parameterize?
     onset_time_blocks = int(0.1 * fs/samplesPerBlock);
-    
+    snac_end_index = int(fs/50); // min f0 is 50 Hz
     // TODO: memset delay and f0 bufs to 0?
 }
 
@@ -174,11 +177,29 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             // buffer f0 signal
             
             f0_buffer[f0_pointer] = channelData[i];
+            ac_buffer[f0_pointer] = channelData[i];
             f0_pointer = (f0_pointer + 1) & Nfft_mask;
             // i would like to check n_buffered at the block level, not the
             // loop level...is it guaranteed that blockSize is a factor of Nfft?
             // probably not, so we should think about that
             ++n_buffered;
+            
+            if (n_buffered == Nfft) {
+                n_buffered = 0;
+                fft.performFrequencyOnlyForwardTransform(ac_buffer);
+                // autocorrelation
+                for (int j = 0; j < Nfft; ++j) {
+                    ac_buffer[2*j] = ac_buffer[j]*ac_buffer[j] + (ac_buffer[j+1] * ac_buffer[j+1]);
+                    ac_buffer[2*j+1] = 0.f;
+                }
+                fft.performRealOnlyInverseTransform(ac_buffer);
+                // peak finding
+                float f0 = find_f0_SNAC();
+                // now reset the buffer
+                memset(ac_buffer, 0, 2*Nfft * sizeof(float));
+                // TODO: reset f0 buffer? if the logic all holds then we shouldn't ever need to reset it
+            }
+            
             // buffer delay signal
             del_buffer[write_pointer] = channelData[i];
             write_pointer = (write_pointer + 1) & del_length_mask;
@@ -235,4 +256,24 @@ float VibratoTransferAudioProcessor::fractional_delay_read(float index) {
     int high = low == del_length - 1 ? 0 : low+1;
     float high_frac = index - low;
     return (1-high_frac) * del_buffer[low] + high_frac * del_buffer[high];
+}
+
+float VibratoTransferAudioProcessor::find_f0_SNAC() {
+    // TODO: any way to avoid divisions here?
+    double norm = 2 * f0_buffer[0]; // website recommends this be a double
+    double decr = (1.0 / (Nfft-1))*0.2; // triangular window from 1 to 0.8
+    ac_buffer[0] = (2 * ac_buffer[0]) / norm;
+    for (int i = 1; i < Nfft; ++i) {
+        norm = norm - (f0_buffer[i-1]*f0_buffer[i-1] + f0_buffer[Nfft-i]*f0_buffer[Nfft-i]);
+        ac_buffer[i] = (i*decr)*(2 * ac_buffer[i]) / norm;
+    }
+    
+    int peak_index = 1;
+    for (int i = 2; i < snac_end_index-1; ++i) {
+        if (ac_buffer[i-1] < ac_buffer[i] && ac_buffer[i+1] < ac_buffer[i] && ac_buffer[i] > ac_buffer[peak_index]) {
+            peak_index = i;
+        }
+    }
+    
+    return fs / peak_index;
 }

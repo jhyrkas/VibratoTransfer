@@ -79,12 +79,14 @@ private:
     int Nfft = 2048; // for pitch detection
     int Nfft_mask = 2047;
     // 2*NFFT because we store the FFT result in place
-    float f0_buffer[2*2048]; // TODO: use DEFINE for Nfft?
+    float f0_buffer[2048]; // TODO: use DEFINE for Nfft?
+    float ac_buffer[2*2048]; // because we need the f0 signal and the ac signal to compute the norm
     int f0_pointer = 0; // used to index into the f0 signal buffer
     int n_buffered = 0; // buffered samples after onset
+    int snac_end_index = 0; // set in prepareToPlay
     bool analyze_f0 = false; // set to true after onset TODO: figure this out
     // TODO: this fft seems to not be initialized correctly or something of that nature?
-    //juce::dsp::FFT fft;
+    juce::dsp::FFT fft;
     
     // hilbert business
     Biquad hilbert_left[4] = {
@@ -129,4 +131,5 @@ private:
     
     // functions I added
     float fractional_delay_read(float index);
+    float find_f0_SNAC();
 };
