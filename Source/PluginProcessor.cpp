@@ -22,12 +22,12 @@ VibratoTransferAudioProcessor::VibratoTransferAudioProcessor()
                      #endif
                        ),
 #endif
-fft(11) // order is the exponent (i.e. 2^11 = 2048)
+peakingFilter(0.f, 0.f, 0.f, 0.f, 0.f)
 {
     // zero out delay buffer
     memset(del_buffer, 0, del_length * sizeof(float));
-    memset(f0_buffer, 0, Nfft * sizeof(float));
-    memset(ac_buffer, 0, 2 * Nfft*sizeof(float));
+    memset(f0_buffer, 0, V_H_NFFT * sizeof(float));
+    memset(ac_buffer, 0, V_NFFT*sizeof(float));
 }
 
 VibratoTransferAudioProcessor::~VibratoTransferAudioProcessor()
@@ -174,40 +174,58 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         auto* channelData = buffer.getWritePointer (channel);
         
         for (int i = 0; i < blockSize; ++i) {
-            // buffer f0 signal
-            
+            // STEP 1: buffer f0 signal (eventually from the sidechain)
             f0_buffer[f0_pointer] = channelData[i];
             ac_buffer[f0_pointer] = channelData[i];
             f0_pointer = (f0_pointer + 1) & Nfft_mask;
-            // i would like to check n_buffered at the block level, not the
-            // loop level...is it guaranteed that blockSize is a factor of Nfft?
-            // probably not, so we should think about that
             ++n_buffered;
             
-            if (n_buffered == Nfft) {
-                n_buffered = 0;
-                fft.performFrequencyOnlyForwardTransform(ac_buffer);
-                // autocorrelation
-                for (int j = 0; j < Nfft; ++j) {
-                    ac_buffer[2*j] = ac_buffer[j]*ac_buffer[j] + (ac_buffer[j+1] * ac_buffer[j+1]);
-                    ac_buffer[2*j+1] = 0.f;
+            // STEP 1.1: if we have buffered enough, do f0 analysis
+            // TODO: is there any way to flag this outside of the for-loop?
+            if (n_buffered == V_H_NFFT) {
+                n_buffered = 0; // reset
+                
+                // autocorrelation and SNAC
+                mayer_realfft(V_NFFT,ac_buffer);
+                ac_buffer[0] *= ac_buffer[0]; // DC
+                ac_buffer[V_H_NFFT] *= ac_buffer[V_H_NFFT]; // Nyquist
+                for (int k = 1; k < V_H_NFFT; ++k) {
+                    ac_buffer[k] = (ac_buffer[k] * ac_buffer[k] + ac_buffer[V_NFFT-k] * ac_buffer[V_NFFT-k]); // real
+                    ac_buffer[V_NFFT-k] = 0.0; // imaginary
                 }
-                fft.performRealOnlyInverseTransform(ac_buffer);
+                mayer_realifft(V_NFFT, ac_buffer);
+                
                 // peak finding
                 float f0 = find_f0_SNAC();
+                last_f0s[last_f0s_pointer] = f0;
+                last_f0s_pointer = (last_f0s_pointer+1) & last_f0s_mask;
+                
+                // STEP 1.2 TODO: if f0s have stabilized and the filter isn't initialized, initialize it
+                // if (something)
+                //        initialize_bp(0.95* f0, 1.05 * f0)
+                
                 // now reset the buffer
-                memset(ac_buffer, 0, 2*Nfft * sizeof(float));
+                memset(ac_buffer, 0, V_NFFT * sizeof(float));
                 // TODO: reset f0 buffer? if the logic all holds then we shouldn't ever need to reset it
             }
             
-            // buffer delay signal
+            // STEP 2: buffer delay signal (buffer the input)
             del_buffer[write_pointer] = channelData[i];
             write_pointer = (write_pointer + 1) & del_length_mask;
             
+            // STEP 3: read from the delay line
             // read (right now do nothing...there should be a 512 sample delay)
             channelData[i] = fractional_delay_read(read_pointer);
             
-            // trying to do a regular vibrato, make sure that read pointer is always in range
+            // STEP 4: calculate the next delay based on the output of the bandpass filter and f0 analysis
+            // if (something)
+            //      bandpass
+            //      hilbert
+            //      angle -> unwrap
+            //      diff for if
+            //      delay offset = 1 - (if/w0)
+            
+            // PLACEHOLDER doing a regular vibrato just to make sure that read pointer is working
             read_pointer = (read_pointer + 1) - (0.1f * sinf(sin_phase));
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
             sin_phase += (twopi * T * 1);
@@ -259,21 +277,40 @@ float VibratoTransferAudioProcessor::fractional_delay_read(float index) {
 }
 
 float VibratoTransferAudioProcessor::find_f0_SNAC() {
+    
     // TODO: any way to avoid divisions here?
-    double norm = 2 * f0_buffer[0]; // website recommends this be a double
-    double decr = (1.0 / (Nfft-1))*0.2; // triangular window from 1 to 0.8
+    double norm = 2 * ac_buffer[0];
+    //double norm = 2 * ac_buffer[0]; // website recommends this be a double
+    double decr = (1.0 / (V_H_NFFT-1))*0.2; // triangular window from 1 to 0.8
     ac_buffer[0] = (2 * ac_buffer[0]) / norm;
-    for (int i = 1; i < Nfft; ++i) {
-        norm = norm - (f0_buffer[i-1]*f0_buffer[i-1] + f0_buffer[Nfft-i]*f0_buffer[Nfft-i]);
-        ac_buffer[i] = (i*decr)*(2 * ac_buffer[i]) / norm;
+    for (int i = 1; i < V_H_NFFT; ++i) {
+        norm = norm - (f0_buffer[i-1]*f0_buffer[i-1] + f0_buffer[V_H_NFFT-i]*f0_buffer[V_H_NFFT-i]);
+        ac_buffer[i] = (1-i*decr)*(2 * ac_buffer[i]) / norm;
     }
     
     int peak_index = 1;
+    float peak_max = 0.f;
     for (int i = 2; i < snac_end_index-1; ++i) {
-        if (ac_buffer[i-1] < ac_buffer[i] && ac_buffer[i+1] < ac_buffer[i] && ac_buffer[i] > ac_buffer[peak_index]) {
+        if (ac_buffer[i-1] < ac_buffer[i] && ac_buffer[i+1] < ac_buffer[i] && ac_buffer[i] > peak_max) {
             peak_index = i;
+            peak_max = ac_buffer[i];
         }
     }
     
     return fs / peak_index;
+}
+
+// doing this now for the peaking filter, change later for butter chain
+void VibratoTransferAudioProcessor::initialize_bp(float bp_low, float bp_high) {
+    // more or less copied from the audio bashing
+    float f0 = (bp_low + bp_high) * 0.5;
+    float bw = (bp_high - bp_low);
+    float w0 = (twopi * f0) / fs;
+    float bwr = (twopi * bw) / fs;
+    float gain = 1.f / sqrt(2); // don't really need to compute every time
+    float beta = (sqrt(1.f - (gain*gain))/gain) * tanf(bwr*0.5f);
+    float norm_gain = 1.f/(1+beta);
+    float ng_cos_w0_neg2 = -2.f*norm_gain*cosf(w0);
+    peakingFilter.setParams(1.f-norm_gain, 0.f, norm_gain-1.f, ng_cos_w0_neg2, 2.f*norm_gain-1.f);
+    bp_initialized = true;
 }

@@ -12,6 +12,10 @@
 #include <numbers>
 #include <JuceHeader.h>
 #include "Biquad.hpp"
+#include "d_fft_mayer.h"
+
+#define V_NFFT 4096
+#define V_H_NFFT 2048
 
 //==============================================================================
 /**
@@ -69,24 +73,29 @@ private:
     float twopi = 2 * std::numbers::pi_v<float>;
     
     // delay business
-    int del_length = 4096; // TODO: think about if this should be longer/shorter
-    int del_length_mask = 4095;
-    float del_buffer[4096]; // TODO: use DEFINE for del_length?
+    // TODO: use DEFINE for del_length?
+    int del_length = V_NFFT; // TODO: think about if this should be longer/shorter
+    int del_length_mask = V_NFFT - 1;
+    float del_buffer[V_NFFT]; // this buffers the input signal
     int write_pointer = 512; // initial delay offset
     float read_pointer = 0;
     
-    // f0 business
-    int Nfft = 2048; // for pitch detection
-    int Nfft_mask = 2047;
+    // f0 analysis business
     // 2*NFFT because we store the FFT result in place
-    float f0_buffer[2048]; // TODO: use DEFINE for Nfft?
-    float ac_buffer[2*2048]; // because we need the f0 signal and the ac signal to compute the norm
+    float f0_buffer[V_H_NFFT]; // this buffers the sidechain / analysis signal
+    float ac_buffer[V_NFFT]; // because we need the f0 signal and the ac signal to compute the norm
+    int Nfft_mask = V_H_NFFT - 1;
     int f0_pointer = 0; // used to index into the f0 signal buffer
     int n_buffered = 0; // buffered samples after onset
     int snac_end_index = 0; // set in prepareToPlay
-    bool analyze_f0 = false; // set to true after onset TODO: figure this out
-    // TODO: this fft seems to not be initialized correctly or something of that nature?
-    juce::dsp::FFT fft;
+    
+    // figuring out when to start and stop the delay TODO: figure this out
+    bool analyze_f0 = false; // set to true after onset
+    bool f0_stabilized = false;
+    bool filter_initialized = false;
+    float last_f0s[4] = {0.f, 0.f, 0.f, 0.f}; // starting with 4, totally arbitrary
+    int last_f0s_pointer = 0;
+    int last_f0s_mask = 3;
     
     // hilbert business
     Biquad hilbert_left[4] = {
@@ -109,6 +118,7 @@ private:
         Biquad(0.f, 0.f, 0.f, 0.f, 0.f), // set these using setParams()
         Biquad(0.f, 0.f, 0.f, 0.f, 0.f) // set these using setParams()
     };
+    Biquad peakingFilter; // TODO: this should go away in favor of butter chain
     float filter_f0 = 0.f; // set using SNAC
     bool bp_initialized = false; // set after butter chain is set
     
@@ -132,4 +142,5 @@ private:
     // functions I added
     float fractional_delay_read(float index);
     float find_f0_SNAC();
+    void initialize_bp(float bp_low, float bp_high);
 };
