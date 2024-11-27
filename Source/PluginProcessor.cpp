@@ -26,7 +26,7 @@ peakingFilter(0.f, 0.f, 0.f, 0.f, 0.f)
 {
     // zero out delay buffer
     memset(del_buffer, 0, del_length * sizeof(float));
-    memset(f0_buffer, 0, V_H_NFFT * sizeof(float));
+    memset(sc_buffer, 0, V_H_NFFT * sizeof(float));
     memset(ac_buffer, 0, V_NFFT*sizeof(float));
 }
 
@@ -158,78 +158,110 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     // this code if your algorithm always overwrites all the output channels.
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
-
-    // This is the place where you'd normally do the guts of your plugin's
-    // audio processing...
-    // Make sure to reset the state if your inner loop is processing
-    // the samples and the outer loop is handling the channels.
-    // Alternatively, you can process the samples with the channels
-    // interleaved by keeping the same state.
     
-    // TODO: to get things started off, let's just start by buffering and make
-    // TODO: sure that we don't crash
-    int totalChans = totalNumInputChannels > 0 ? 1 : 0;
-    for (int channel = 0; channel < totalChans; ++channel)
+    int totalChans = totalNumInputChannels > 0 ? 1 : 0; // TODO: get main and side-chain channels
+    
+    // analysis loop - side chain (right channel for testing)
+    for (int channel = 1; channel < 2; ++channel)
     {
         auto* channelData = buffer.getWritePointer (channel);
-        
         for (int i = 0; i < blockSize; ++i) {
             // STEP 1: buffer f0 signal (eventually from the sidechain)
-            f0_buffer[f0_pointer] = channelData[i];
-            ac_buffer[f0_pointer] = channelData[i];
-            f0_pointer = (f0_pointer + 1) & Nfft_mask;
+            sc_buffer[sc_pointer] = channelData[i];
+            ac_buffer[sc_pointer] = channelData[i];
+            sc_pointer = (sc_pointer + 1) & Nfft_mask;
             ++n_buffered;
             
-            // STEP 1.1: if we have buffered enough, do f0 analysis
+            // STEP 2: if we have buffered enough, do f0 analysis
             // TODO: is there any way to flag this outside of the for-loop?
             if (n_buffered == V_H_NFFT) {
                 n_buffered = 0; // reset
+                float f0 = 0.f;
                 
-                // autocorrelation and SNAC
-                mayer_realfft(V_NFFT,ac_buffer);
-                ac_buffer[0] *= ac_buffer[0]; // DC
-                ac_buffer[V_H_NFFT] *= ac_buffer[V_H_NFFT]; // Nyquist
-                for (int k = 1; k < V_H_NFFT; ++k) {
-                    ac_buffer[k] = (ac_buffer[k] * ac_buffer[k] + ac_buffer[V_NFFT-k] * ac_buffer[V_NFFT-k]); // real
-                    ac_buffer[V_NFFT-k] = 0.0; // imaginary
+                // if analysis signal is too quiet, don't even bother
+                if (sidechainTooQuiet()) {
+                    if (bp_initialized) {
+                        bp_initialized = false;
+                    }
+                    process_delay = false;
+                    last_f0s[last_f0s_pointer] = f0;
+                    last_f0s_pointer = (last_f0s_pointer+1) & last_f0s_mask;
+                    previous_f0_sum = 0;
+                    previous_f0_count = 0;
+                // do autocorrelation and SNAC
+                } else {
+                    mayer_realfft(V_NFFT,ac_buffer); // FFT
+                    ac_buffer[0] *= ac_buffer[0]; // process DC
+                    ac_buffer[V_H_NFFT] *= ac_buffer[V_H_NFFT]; // process Nyquist
+                    // process positive frequencies
+                    for (int k = 1; k < V_H_NFFT; ++k) {
+                        ac_buffer[k] = (ac_buffer[k] * ac_buffer[k] + ac_buffer[V_NFFT-k] * ac_buffer[V_NFFT-k]); // real
+                        ac_buffer[V_NFFT-k] = 0.0; // imaginary
+                    }
+                    mayer_realifft(V_NFFT, ac_buffer); // IFFT
+                    
+                    // peak finding
+                    f0 = find_f0_SNAC();
+                    last_f0s[last_f0s_pointer] = f0;
+                    last_f0s_pointer = (last_f0s_pointer + 1) & last_f0s_mask;
+                    // if f0 is stable, process bp if necessary and set delay processing to true
+                    if (f0Stable()) {
+                        if (!bp_initialized) {initialize_bp(0.95*f0, 1.05*f0);}
+                        if (previous_f0_count < averaging_frames) {
+                            previous_f0_sum += f0;
+                            previous_f0_count += 1;
+                        }
+                        process_delay = true;
+                    }
                 }
-                mayer_realifft(V_NFFT, ac_buffer);
-                
-                // peak finding
-                float f0 = find_f0_SNAC();
-                last_f0s[last_f0s_pointer] = f0;
-                last_f0s_pointer = (last_f0s_pointer+1) & last_f0s_mask;
-                
-                // STEP 1.2 TODO: if f0s have stabilized and the filter isn't initialized, initialize it
-                // if (something)
-                //        initialize_bp(0.95* f0, 1.05 * f0)
-                
                 // now reset the buffer
                 memset(ac_buffer, 0, V_NFFT * sizeof(float));
                 // TODO: reset f0 buffer? if the logic all holds then we shouldn't ever need to reset it
             }
-            
-            // STEP 2: buffer delay signal (buffer the input)
-            del_buffer[write_pointer] = channelData[i];
+        }
+    }
+    
+    // processing loop - main input (left channel for testing)
+    auto* inputData = buffer.getWritePointer (0);
+    auto* sdData = buffer.getWritePointer(1);
+    // putting the if statement outside of the processing loop
+    if (process_delay) {
+        float w0 = T * twopi * (previous_f0_sum / previous_f0_count);
+        for (int i = 0; i < blockSize; ++i) {
+            // STEP 2: buffer the input
+            del_buffer[write_pointer] = inputData[i];
             write_pointer = (write_pointer + 1) & del_length_mask;
             
             // STEP 3: read from the delay line
             // read (right now do nothing...there should be a 512 sample delay)
-            channelData[i] = fractional_delay_read(read_pointer);
+            inputData[i] = fractional_delay_read(read_pointer);
             
             // STEP 4: calculate the next delay based on the output of the bandpass filter and f0 analysis
-            // if (something)
-            //      bandpass
-            //      hilbert
-            //      angle -> unwrap
-            //      diff for if
-            //      delay offset = 1 - (if/w0)
-            
-            // PLACEHOLDER doing a regular vibrato just to make sure that read pointer is working
-            read_pointer = (read_pointer + 1) - (0.1f * sinf(sin_phase));
+            float bp_sample = peakingFilter.processSample(sdData[i]);
+            float hb_left = hilbert_left[3].processSample(hilbert_left[2].processSample(hilbert_left[1].processSample(hilbert_left[0].processSample(bp_sample))));
+            float hb_right = hilbert_right[3].processSample(hilbert_right[2].processSample(hilbert_right[1].processSample(hilbert_right[0].processSample(bp_sample))));
+            float curr_phase = atan2f(last_right_out, hb_left);
+            float inst_freq = curr_phase - last_phase;
+            // phase wrapping - too aggressive?
+            while (inst_freq < 0) {inst_freq += twopi;}
+            while (inst_freq > twopi) {inst_freq -= twopi;}
+            last_right_out = hb_right;
+            last_phase = curr_phase;
+            float dt = 1 - (inst_freq/w0);
+            //Dt += dt; // TODO: this might be totally unnecessary?
+            read_pointer = (read_pointer + 1) - dt;
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
-            sin_phase += (twopi * T * 1);
-            sin_phase = sin_phase > twopi ? sin_phase - twopi : sin_phase;
+        }
+    // not processing delay because sidechain is quiet or unstable
+    } else {
+        for (int i = 0; i < blockSize; ++i) {
+            // STEP 2: buffer the input
+            del_buffer[write_pointer] = inputData[i];
+            write_pointer = (write_pointer + 1) & del_length_mask;
+            inputData[i] = fractional_delay_read(read_pointer);
+            // read pointer can still be fractional
+            read_pointer = read_pointer + 1;
+            read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
         }
     }
 }
@@ -284,7 +316,7 @@ float VibratoTransferAudioProcessor::find_f0_SNAC() {
     double decr = (1.0 / (V_H_NFFT-1))*0.2; // triangular window from 1 to 0.8
     ac_buffer[0] = (2 * ac_buffer[0]) / norm;
     for (int i = 1; i < V_H_NFFT; ++i) {
-        norm = norm - (f0_buffer[i-1]*f0_buffer[i-1] + f0_buffer[V_H_NFFT-i]*f0_buffer[V_H_NFFT-i]);
+        norm = norm - (sc_buffer[i-1]*sc_buffer[i-1] + sc_buffer[V_H_NFFT-i]*sc_buffer[V_H_NFFT-i]);
         ac_buffer[i] = (1-i*decr)*(2 * ac_buffer[i]) / norm;
     }
     
@@ -298,6 +330,25 @@ float VibratoTransferAudioProcessor::find_f0_SNAC() {
     }
     
     return fs / peak_index;
+}
+
+bool VibratoTransferAudioProcessor::sidechainTooQuiet() {
+    float l_thresh = 0.01f; // -40 dB TODO: parameterize?
+    int s_thresh = int(0.1*V_H_NFFT); // 10% of signal above thresh //TODO: better cheap env follower
+    int samps_above_thresh = 0;
+    for (int i = 0; i < V_H_NFFT; ++i) {
+        samps_above_thresh = fabsf(sc_buffer[i]) > l_thresh ? samps_above_thresh + 1 : samps_above_thresh;
+    }
+    return samps_above_thresh < s_thresh;
+}
+
+bool VibratoTransferAudioProcessor::f0Stable() {
+    // have we done at least four non-zero analyses
+    float thresh = 0.05 * last_f0s[3];
+    bool stable = last_f0s[3] > 0.f ?
+        fabsf(last_f0s[0]-last_f0s[3]) < thresh && fabsf(last_f0s[1]-last_f0s[2]) < thresh && fabsf(last_f0s[1]-last_f0s[3]) < thresh
+        : false;
+    return stable;
 }
 
 // doing this now for the peaking filter, change later for butter chain

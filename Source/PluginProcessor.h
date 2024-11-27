@@ -82,15 +82,14 @@ private:
     
     // f0 analysis business
     // 2*NFFT because we store the FFT result in place
-    float f0_buffer[V_H_NFFT]; // this buffers the sidechain / analysis signal
+    float sc_buffer[V_H_NFFT]; // this buffers the sidechain / analysis signal
     float ac_buffer[V_NFFT]; // because we need the f0 signal and the ac signal to compute the norm
     int Nfft_mask = V_H_NFFT - 1;
-    int f0_pointer = 0; // used to index into the f0 signal buffer
+    int sc_pointer = 0; // used to index into the f0 signal buffer
     int n_buffered = 0; // buffered samples after onset
     int snac_end_index = 0; // set in prepareToPlay
     
     // figuring out when to start and stop the delay TODO: figure this out
-    bool analyze_f0 = false; // set to true after onset
     bool f0_stabilized = false;
     bool filter_initialized = false;
     float last_f0s[4] = {0.f, 0.f, 0.f, 0.f}; // starting with 4, totally arbitrary
@@ -121,26 +120,25 @@ private:
     Biquad peakingFilter; // TODO: this should go away in favor of butter chain
     float filter_f0 = 0.f; // set using SNAC
     bool bp_initialized = false; // set after butter chain is set
+    bool process_delay = false;
     
     // delay function business
     float last_phase = 0;
     float slowest_vibrato = 1; // Hz TODO: parameterize?
     int averaging_frames; // set in prepareToPlay using fs
     float previous_f0_sum = 0;
-    float previous_f0_count = 0; // using these two to calculate previous f0 mean
+    int previous_f0_count = 0; // using these two to calculate previous f0 mean
     // cumsum of RFS (this is effectively the last offset of the delay function)
-    float Dt = 0;
+    //float Dt = 0;
     
     // onset business TODO: figure most of this out
     float onset_level = 0.1; // -20 dB
     int onset_time_blocks; // set in prepareToPlay using fs
-    bool in_vibrato = false; // set once we are analyzing vibrato
-    int vibrato_blocks_processed = 0; // increment as we process, set to 0 after offset
-    
-    float sin_phase = 0.f; // for sinusoidal vibrato...delate later
-    
+        
     // functions I added
     float fractional_delay_read(float index);
     float find_f0_SNAC();
     void initialize_bp(float bp_low, float bp_high);
+    bool sidechainTooQuiet();
+    bool f0Stable();
 };

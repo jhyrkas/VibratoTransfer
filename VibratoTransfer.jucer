@@ -5,6 +5,8 @@
               cppLanguageStandard="20">
   <MAINGROUP id="aAsmxH" name="VibratoTransfer">
     <GROUP id="{4883BCC0-29EF-39E3-4431-321F5A7F8740}" name="Source">
+      <FILE id="BAtXz8" name="d_fft_mayer.c" compile="1" resource="0" file="Source/d_fft_mayer.c"/>
+      <FILE id="RlYmen" name="d_fft_mayer.h" compile="0" resource="0" file="Source/d_fft_mayer.h"/>
       <FILE id="jPGboa" name="Biquad.cpp" compile="1" resource="0" file="Source/Biquad.cpp"/>
       <FILE id="X9av7z" name="Biquad.hpp" compile="0" resource="0" file="Source/Biquad.hpp"/>
       <FILE id="KddY43" name="PluginProcessor.cpp" compile="1" resource="0"
