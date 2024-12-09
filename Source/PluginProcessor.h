@@ -92,9 +92,15 @@ private:
     // figuring out when to start and stop the delay TODO: figure this out
     bool f0_stabilized = false;
     bool filter_initialized = false;
-    float last_f0s[4] = {0.f, 0.f, 0.f, 0.f}; // starting with 4, totally arbitrary
+    
+    //float last_f0s[4] = {0.f, 0.f, 0.f, 0.f}; // starting with 4, totally arbitrary
+    //int last_f0s_mask = 3;
+    
+    float last_f0s[8] = {0.f, 0.f, 0.f, 0.f,0.f, 0.f, 0.f, 0.f}; // starting with 8, totally arbitrary
+    int last_f0s_mask = 7;
+    
+    
     int last_f0s_pointer = 0;
-    int last_f0s_mask = 3;
     
     // hilbert business
     Biquad hilbert_left[4] = {

@@ -18,7 +18,7 @@ public:
     // TODO: basically, this is multiple for-loops versus many function calls
     virtual float processSample(float sample);
     virtual void setParams(float _b0, float _b1, float _b2, float _a1, float _a2);
-private:
+protected:
     float b0, b1, b2, a1, a2;
     // TODO: reimplement in canonical form for fewer floats kept around
     float b_zi[2];

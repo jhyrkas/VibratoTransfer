@@ -206,6 +206,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                     last_f0s_pointer = (last_f0s_pointer + 1) & last_f0s_mask;
                     // if f0 is stable, process bp if necessary and set delay processing to true
                     if (f0Stable()) {
+                        // TODO: it seems for some signals this is too narrow!
                         if (!bp_initialized) {initialize_bp(0.95*f0, 1.05*f0);}
                         if (previous_f0_count < averaging_frames) {
                             previous_f0_sum += f0;
@@ -344,10 +345,13 @@ bool VibratoTransferAudioProcessor::sidechainTooQuiet() {
 
 bool VibratoTransferAudioProcessor::f0Stable() {
     // have we done at least four non-zero analyses
-    float thresh = 0.05 * last_f0s[3];
-    bool stable = last_f0s[3] > 0.f ?
-        fabsf(last_f0s[0]-last_f0s[3]) < thresh && fabsf(last_f0s[1]-last_f0s[2]) < thresh && fabsf(last_f0s[1]-last_f0s[3]) < thresh
-        : false;
+    float thresh = 0.05 * last_f0s[last_f0s_mask]; // this is also maybe too narrow
+    if (thresh == 0.f) { return false; }
+    // really bad
+    bool stable = fabsf(last_f0s[0] - last_f0s[last_f0s_mask]) < thresh;
+    for (int i = 1; i < last_f0s_mask; ++i) {
+        stable = stable && fabsf(last_f0s[i] - last_f0s[i-1]) < thresh;
+    }
     return stable;
 }
 
