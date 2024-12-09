@@ -19,7 +19,7 @@
 class ButterBP
 {
 public:
-    ButterBP(float bpL, float bpH, float fs);
+    ButterBP();
     virtual ~ButterBP();
     virtual float processSample(float sample);
     virtual void setParams(float bpL, float bpH, float fs);

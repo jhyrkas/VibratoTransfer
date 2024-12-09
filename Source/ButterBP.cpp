@@ -10,19 +10,15 @@
 
 #include "ButterBP.h"
 
-ButterBP::ButterBP(float bpL, float bpH, float fs) {
+ButterBP::ButterBP() {
     b_zi[0] = 0; b_zi[1] = 0; b_zi[2] = 0; b_zi[3] = 0;
     a_zi[0] = 0; a_zi[1] = 0; a_zi[2] = 0; a_zi[3] = 0;
-    
-    float wLow = (2*bpL)/fs;
-    float wHigh = (2*bpH)/fs;
-    std::vector<double> a = ComputeDenCoeffs(wLow, wHigh);
-    std::vector<double> b = ComputeNumCoeffs(wLow, wHigh, a);
-    b0 = b[0]; b1 = b[1]; b2 = b[2]; b3 = b[3]; b4 = b[4];
-    a1 = a[1]; a2 = a[2]; a3 = a[3]; a4 = a[4]; // a0 = 1
 }
 
-// this is identical to the constructor 
+ButterBP::~ButterBP() {
+    // no-op
+}
+
 void ButterBP::setParams(float bpL, float bpH, float fs) {
     b_zi[0] = 0; b_zi[1] = 0; b_zi[2] = 0; b_zi[3] = 0;
     a_zi[0] = 0; a_zi[1] = 0; a_zi[2] = 0; a_zi[3] = 0;

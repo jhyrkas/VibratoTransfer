@@ -22,7 +22,7 @@ VibratoTransferAudioProcessor::VibratoTransferAudioProcessor()
                      #endif
                        ),
 #endif
-peakingFilter(0.f, 0.f, 0.f, 0.f, 0.f)
+butterBP()
 {
     // zero out delay buffer
     memset(del_buffer, 0, del_length * sizeof(float));
@@ -238,7 +238,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             inputData[i] = fractional_delay_read(read_pointer);
             
             // STEP 4: calculate the next delay based on the output of the bandpass filter and f0 analysis
-            float bp_sample = peakingFilter.processSample(sdData[i]);
+            float bp_sample = butterBP.processSample(sdData[i]);
             float hb_left = hilbert_left[3].processSample(hilbert_left[2].processSample(hilbert_left[1].processSample(hilbert_left[0].processSample(bp_sample))));
             float hb_right = hilbert_right[3].processSample(hilbert_right[2].processSample(hilbert_right[1].processSample(hilbert_right[0].processSample(bp_sample))));
             float curr_phase = atan2f(last_right_out, hb_left);
@@ -355,6 +355,12 @@ bool VibratoTransferAudioProcessor::f0Stable() {
     return stable;
 }
 
+void VibratoTransferAudioProcessor::initialize_bp(float bp_low, float bp_high) {
+    butterBP.setParams(bp_low, bp_high, fs);
+    bp_initialized = true;
+}
+
+/* OLD CODE: peaking biquad
 // doing this now for the peaking filter, change later for butter chain
 void VibratoTransferAudioProcessor::initialize_bp(float bp_low, float bp_high) {
     // more or less copied from the audio bashing
@@ -369,3 +375,4 @@ void VibratoTransferAudioProcessor::initialize_bp(float bp_low, float bp_high) {
     peakingFilter.setParams(1.f-norm_gain, 0.f, norm_gain-1.f, ng_cos_w0_neg2, 2.f*norm_gain-1.f);
     bp_initialized = true;
 }
+*/

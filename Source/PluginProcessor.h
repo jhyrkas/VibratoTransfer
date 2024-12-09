@@ -12,6 +12,7 @@
 #include <numbers>
 #include <JuceHeader.h>
 #include "Biquad.hpp"
+#include "ButterBP.h"
 #include "d_fft_mayer.h"
 
 #define V_NFFT 4096
@@ -123,7 +124,7 @@ private:
         Biquad(0.f, 0.f, 0.f, 0.f, 0.f), // set these using setParams()
         Biquad(0.f, 0.f, 0.f, 0.f, 0.f) // set these using setParams()
     };
-    Biquad peakingFilter; // TODO: this should go away in favor of butter chain
+    ButterBP butterBP; // TODO: this should go away in favor of butter chain
     float filter_f0 = 0.f; // set using SNAC
     bool bp_initialized = false; // set after butter chain is set
     bool process_delay = false;
