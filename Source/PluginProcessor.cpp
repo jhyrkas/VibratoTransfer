@@ -207,7 +207,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                     // if f0 is stable, process bp if necessary and set delay processing to true
                     if (f0Stable()) {
                         // TODO: it seems for some signals this is too narrow!
-                        if (!bp_initialized) {initialize_bp(0.95*f0, 1.05*f0);}
+                        if (!bp_initialized) {initialize_bp(0.90*f0, 1.10*f0);}
                         if (previous_f0_count < averaging_frames) {
                             previous_f0_sum += f0;
                             previous_f0_count += 1;
