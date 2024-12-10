@@ -141,6 +141,7 @@ private:
     // onset business TODO: figure most of this out
     float onset_level = 0.1; // -20 dB
     int onset_time_blocks; // set in prepareToPlay using fs
+    int blocks_processed = 0;
         
     // functions I added
     float fractional_delay_read(float index);

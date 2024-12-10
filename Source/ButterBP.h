@@ -23,6 +23,7 @@ public:
     virtual ~ButterBP();
     virtual float processSample(float sample);
     virtual void setParams(float bpL, float bpH, float fs);
+    void clear();
 protected:
     // making these doubles because we aren't using a SOS...hopefully this helps
     double b0, b1, b2, b3, b4, a1, a2, a3, a4;

@@ -31,6 +31,11 @@ void ButterBP::setParams(float bpL, float bpH, float fs) {
     a1 = a[1]; a2 = a[2]; a3 = a[3]; a4 = a[4]; // a0 = 1
 }
 
+void ButterBP::clear() {
+    b_zi[0] = 0; b_zi[1] = 0; b_zi[2] = 0; b_zi[3] = 0;
+    a_zi[0] = 0; a_zi[1] = 0; a_zi[2] = 0; a_zi[3] = 0;
+}
+
 // this is a very inefficient implementation, and also risks numerical errors due to no SOS
 float ButterBP::processSample(float sample) {
     float outp = b0 * sample + b1 * b_zi[0] + b2 * b_zi[1] + b3 * b_zi[2] + b4 * b_zi[3] -

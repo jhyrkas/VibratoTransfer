@@ -107,6 +107,13 @@ void VibratoTransferAudioProcessor::prepareToPlay (double sampleRate, int sample
     onset_time_blocks = int(0.1 * fs/samplesPerBlock);
     snac_end_index = int(fs/50); // min f0 is 50 Hz
     // TODO: memset delay and f0 bufs to 0?
+    
+    // TODO: double check, should we clear these here? problably in case fs changes
+    butterBP.clear();
+    hilbert_left[0].clear(); hilbert_left[1].clear(); hilbert_left[2].clear(); hilbert_left[3].clear();
+    hilbert_right[0].clear(); hilbert_right[1].clear(); hilbert_right[2].clear(); hilbert_right[3].clear();
+    process_delay = false;
+    bp_initialized = false;
 }
 
 void VibratoTransferAudioProcessor::releaseResources()
@@ -188,6 +195,10 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                     last_f0s_pointer = (last_f0s_pointer+1) & last_f0s_mask;
                     previous_f0_sum = 0;
                     previous_f0_count = 0;
+                    butterBP.clear();
+                    hilbert_left[0].clear(); hilbert_left[1].clear(); hilbert_left[2].clear(); hilbert_left[3].clear();
+                    hilbert_right[0].clear(); hilbert_right[1].clear(); hilbert_right[2].clear(); hilbert_right[3].clear();
+                    blocks_processed = 0;
                 // do autocorrelation and SNAC
                 } else {
                     mayer_realfft(V_NFFT,ac_buffer); // FFT
@@ -250,9 +261,10 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             last_phase = curr_phase;
             float dt = 1 - (inst_freq/w0);
             //Dt += dt; // TODO: this might be totally unnecessary?
-            read_pointer = (read_pointer + 1) - dt;
+            read_pointer = blocks_processed >= onset_time_blocks ? (read_pointer + 1) - dt : (read_pointer + 1);
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
         }
+        blocks_processed += 1;
     // not processing delay because sidechain is quiet or unstable
     } else {
         for (int i = 0; i < blockSize; ++i) {

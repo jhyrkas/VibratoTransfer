@@ -37,3 +37,8 @@ void Biquad::setParams(float _b0, float _b1, float _b2, float _a1, float _a2) {
     b_zi[0] = 0; b_zi[1] = 0;
     a_zi[0] = 0; a_zi[1] = 0;
 }
+
+void Biquad::clear() {
+    b_zi[0] = 0; b_zi[1] = 0;
+    a_zi[0] = 0; a_zi[1] = 0;
+}
