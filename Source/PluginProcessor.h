@@ -148,6 +148,6 @@ private:
     float fractional_delay_read(float index);
     float find_f0_SNAC();
     void initialize_bp(float bp_low, float bp_high);
-    bool sidechainTooQuiet();
+    bool bufferTooQuiet(auto* data, int size);
     bool f0Stable();
 };

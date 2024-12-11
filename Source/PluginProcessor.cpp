@@ -186,7 +186,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                 float f0 = 0.f;
                 
                 // if analysis signal is too quiet, don't even bother
-                if (sidechainTooQuiet()) {
+                if (bufferTooQuiet(ac_buffer, V_H_NFFT)) {
                     if (bp_initialized) {
                         bp_initialized = false;
                     }
@@ -235,7 +235,9 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     
     // processing loop - main input (left channel for testing)
     auto* inputData = buffer.getWritePointer (0);
-    auto* sdData = buffer.getWritePointer(1);
+    auto* scData = buffer.getWritePointer(1);
+    
+    process_delay = process_delay && !bufferTooQuiet(scData, blockSize);
     // putting the if statement outside of the processing loop
     if (process_delay) {
         float w0 = T * twopi * (previous_f0_sum / previous_f0_count);
@@ -249,7 +251,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             inputData[i] = fractional_delay_read(read_pointer);
             
             // STEP 4: calculate the next delay based on the output of the bandpass filter and f0 analysis
-            float bp_sample = butterBP.processSample(sdData[i]);
+            float bp_sample = butterBP.processSample(scData[i]);
             float hb_left = hilbert_left[3].processSample(hilbert_left[2].processSample(hilbert_left[1].processSample(hilbert_left[0].processSample(bp_sample))));
             float hb_right = hilbert_right[3].processSample(hilbert_right[2].processSample(hilbert_right[1].processSample(hilbert_right[0].processSample(bp_sample))));
             float curr_phase = atan2f(last_right_out, hb_left);
@@ -354,12 +356,13 @@ float VibratoTransferAudioProcessor::find_f0_SNAC() {
     return fs / peak_index;
 }
 
-bool VibratoTransferAudioProcessor::sidechainTooQuiet() {
+bool VibratoTransferAudioProcessor::bufferTooQuiet(auto* data, int size) {
     float l_thresh = 0.01f; // -40 dB TODO: parameterize?
     int s_thresh = int(0.1*V_H_NFFT); // 10% of signal above thresh //TODO: better cheap env follower
     int samps_above_thresh = 0;
-    for (int i = 0; i < V_H_NFFT; ++i) {
-        samps_above_thresh = fabsf(sc_buffer[i]) > l_thresh ? samps_above_thresh + 1 : samps_above_thresh;
+    for (int i = 0; i < size; ++i) {
+        auto samp = data[i] < 0 ? -data[i] : data[i];
+        samps_above_thresh = samp > l_thresh ? samps_above_thresh + 1 : samps_above_thresh;
     }
     return samps_above_thresh < s_thresh;
 }
