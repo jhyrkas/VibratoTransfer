@@ -17,6 +17,7 @@
 
 #define V_NFFT 4096
 #define V_H_NFFT 2048
+#define DEL_LAG 512
 
 //==============================================================================
 /**
@@ -78,7 +79,7 @@ private:
     int del_length = V_NFFT; // TODO: think about if this should be longer/shorter
     int del_length_mask = V_NFFT - 1;
     float del_buffer[V_NFFT]; // this buffers the input signal
-    int write_pointer = 512; // initial delay offset
+    int write_pointer = DEL_LAG; // initial delay offset
     float read_pointer = 0;
     
     // f0 analysis business

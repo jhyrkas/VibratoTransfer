@@ -267,13 +267,22 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         blocks_processed += 1;
     // not processing delay because sidechain is quiet or unstable
     } else {
+        // see if we need to subtly reset the read pointer
+        float cur_lag = (write_pointer - read_pointer);
+        while (cur_lag < 0) {cur_lag += del_length;}
+        while (cur_lag > del_length) {cur_lag -= del_length;}
+        float diff = DEL_LAG - cur_lag;
+        // try to catch up, but not too fast
+        float dt = fmin(fabsf(diff/blockSize), 0.002);
+        dt = diff > 0 ? dt : -dt;
+        
         for (int i = 0; i < blockSize; ++i) {
             // STEP 2: buffer the input
             del_buffer[write_pointer] = inputData[i];
             write_pointer = (write_pointer + 1) & del_length_mask;
             inputData[i] = fractional_delay_read(read_pointer);
             // read pointer can still be fractional
-            read_pointer = read_pointer + 1;
+            read_pointer = read_pointer + 1 - dt;
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
         }
     }
