@@ -31,6 +31,7 @@ protected:
     double b_zi[4];
     double a_zi[4];
     
+    // TODO: since filter order is fixed, these could be converted to arrays of the correct size
     std::vector<double> ComputeDenCoeffs(double Lcutoff, double Ucutoff);
 
     std::vector<double> TrinomialMultiply(std::vector<double> b, std::vector<double> c);

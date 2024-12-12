@@ -22,12 +22,16 @@ VibratoTransferAudioProcessor::VibratoTransferAudioProcessor()
                      #endif
                        ),
 #endif
-butterBP()
+butterBP(),
+//envelopeBP() // ButterBP
+envelopeBP(0, 0, 0, 0, 0) // Biquad
 {
     // zero out delay buffer
     memset(del_buffer, 0, del_length * sizeof(float));
     memset(sc_buffer, 0, V_H_NFFT * sizeof(float));
     memset(ac_buffer, 0, V_NFFT*sizeof(float));
+    
+    ap_scaler = 1.f; // testing making this bigger, but delete this later
 }
 
 VibratoTransferAudioProcessor::~VibratoTransferAudioProcessor()
@@ -114,6 +118,8 @@ void VibratoTransferAudioProcessor::prepareToPlay (double sampleRate, int sample
     hilbert_right[0].clear(); hilbert_right[1].clear(); hilbert_right[2].clear(); hilbert_right[3].clear();
     process_delay = false;
     bp_initialized = false;
+    //envelopeBP.setParams(1.f, 10.f, fs); // 1 Hz thru 10 Hz, this does a buffer clear
+    initialize_env_bp(); // this does a buffer clear
 }
 
 void VibratoTransferAudioProcessor::releaseResources()
@@ -196,6 +202,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                     previous_f0_sum = 0;
                     previous_f0_count = 0;
                     butterBP.clear();
+                    envelopeBP.clear();
                     hilbert_left[0].clear(); hilbert_left[1].clear(); hilbert_left[2].clear(); hilbert_left[3].clear();
                     hilbert_right[0].clear(); hilbert_right[1].clear(); hilbert_right[2].clear(); hilbert_right[3].clear();
                     blocks_processed = 0;
@@ -248,7 +255,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             
             // STEP 3: read from the delay line
             // read (right now do nothing...there should be a 512 sample delay)
-            inputData[i] = fractional_delay_read(read_pointer);
+            inputData[i] = last_env*fractional_delay_read(read_pointer);
             
             // STEP 4: calculate the next delay based on the output of the bandpass filter and f0 analysis
             float bp_sample = butterBP.processSample(scData[i]);
@@ -259,12 +266,15 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             // phase wrapping - too aggressive?
             while (inst_freq < 0) {inst_freq += twopi;}
             while (inst_freq > twopi) {inst_freq -= twopi;}
-            last_right_out = hb_right;
             last_phase = curr_phase;
             float dt = 1 - (inst_freq/w0);
-            //Dt += dt; // TODO: this might be totally unnecessary?
+            float envBPout = envelopeBP.processSample( sqrt(hb_left*hb_left+last_right_out*last_right_out)
+                );
+            last_env = blocks_processed >= onset_time_blocks ? 1.f - ap_scaler*envBPout : 1.f;
+            // TODO: add a clip around last_env
             read_pointer = blocks_processed >= onset_time_blocks ? (read_pointer + 1) - dt : (read_pointer + 1);
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
+            last_right_out = hb_right;
         }
         blocks_processed += 1;
     // not processing delay because sidechain is quiet or unstable
@@ -273,19 +283,24 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         float cur_lag = (write_pointer - read_pointer);
         while (cur_lag < 0) {cur_lag += del_length;}
         while (cur_lag > del_length) {cur_lag -= del_length;}
-        float diff = DEL_LAG - cur_lag;
+        float dt_diff = DEL_LAG - cur_lag;
         // try to catch up, but not too fast
-        float dt = fmin(fabsf(diff/blockSize), 0.002);
-        dt = diff > 0 ? dt : -dt;
+        float dt = fmin(fabsf(dt_diff/blockSize), 0.002);
+        dt = dt_diff > 0 ? dt : -dt;
+        // TODO: right here, keep track of last envelope, start ramping back to 1
+        float e_diff = 1.f - last_env;
+        float env_incr = fmin(fabsf(e_diff/blockSize),0.001);
+        env_incr = e_diff < 0 ? -env_incr : env_incr;
         
         for (int i = 0; i < blockSize; ++i) {
             // STEP 2: buffer the input
             del_buffer[write_pointer] = inputData[i];
             write_pointer = (write_pointer + 1) & del_length_mask;
-            inputData[i] = fractional_delay_read(read_pointer);
+            inputData[i] = last_env * fractional_delay_read(read_pointer);
             // read pointer can still be fractional
             read_pointer = read_pointer + 1 - dt;
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
+            last_env += env_incr;
         }
     }
 }
@@ -382,6 +397,18 @@ bool VibratoTransferAudioProcessor::f0Stable() {
 void VibratoTransferAudioProcessor::initialize_bp(float bp_low, float bp_high) {
     butterBP.setParams(bp_low, bp_high, fs);
     bp_initialized = true;
+}
+
+void VibratoTransferAudioProcessor::initialize_env_bp() {
+    float f0 = 5.f;
+    float bw = 4.f;
+    float w0 = (twopi * f0) / fs;
+    float bwr = (twopi * bw) / fs;
+    float gain = 1.f / sqrt(2); // don't really need to compute every time
+    float beta = (sqrt(1.f - (gain*gain))/gain) * tanf(bwr*0.5f);
+    float norm_gain = 1.f/(1+beta);
+    float ng_cos_w0_neg2 = -2.f*norm_gain*cosf(w0);
+    envelopeBP.setParams(1.f-norm_gain, 0.f, norm_gain-1.f, ng_cos_w0_neg2, 2.f*norm_gain-1.f);
 }
 
 /* OLD CODE: peaking biquad

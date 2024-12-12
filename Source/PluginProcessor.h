@@ -139,6 +139,12 @@ private:
     // cumsum of RFS (this is effectively the last offset of the delay function)
     //float Dt = 0;
     
+    // envelope business
+    //ButterBP envelopeBP;
+    Biquad envelopeBP;
+    float last_env = 1.f;
+    float ap_scaler = 1.f; // eventually set this by parameter
+    
     // onset business TODO: figure most of this out
     float onset_level = 0.1; // -20 dB
     int onset_time_blocks; // set in prepareToPlay using fs
@@ -150,4 +156,6 @@ private:
     void initialize_bp(float bp_low, float bp_high);
     bool bufferTooQuiet(auto* data, int size);
     bool f0Stable();
+    
+    void initialize_env_bp(); // peaking BP, delete if it is removed
 };
