@@ -31,7 +31,7 @@ envelopeBP(0, 0, 0, 0, 0) // Biquad
     memset(sc_buffer, 0, V_H_NFFT * sizeof(float));
     memset(ac_buffer, 0, V_NFFT*sizeof(float));
     
-    ap_scaler = 1.f; // testing making this bigger, but delete this later
+    amp_scaler = 1.f; // testing making this bigger, but delete this later
 }
 
 VibratoTransferAudioProcessor::~VibratoTransferAudioProcessor()
@@ -270,9 +270,9 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             float dt = 1 - (inst_freq/w0);
             float envBPout = envelopeBP.processSample( sqrt(hb_left*hb_left+last_right_out*last_right_out)
                 );
-            last_env = blocks_processed >= onset_time_blocks ? 1.f - ap_scaler*envBPout : 1.f;
+            last_env = blocks_processed >= onset_time_blocks ? 1.f - amp_scaler*envBPout : 1.f;
             // TODO: add a clip around last_env
-            read_pointer = blocks_processed >= onset_time_blocks ? (read_pointer + 1) - dt : (read_pointer + 1);
+            read_pointer = blocks_processed >= onset_time_blocks ? (read_pointer + 1) - dt_scaler*dt : (read_pointer + 1);
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
             last_right_out = hb_right;
         }

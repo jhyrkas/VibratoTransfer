@@ -65,6 +65,9 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    // these should probably be set using public methods instead of being public values
+    float dt_scaler = 1.f;
+    float amp_scaler = 1.f;
 private:
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VibratoTransferAudioProcessor)
@@ -143,7 +146,6 @@ private:
     //ButterBP envelopeBP;
     Biquad envelopeBP;
     float last_env = 1.f;
-    float ap_scaler = 1.f; // eventually set this by parameter
     
     // onset business TODO: figure most of this out
     float onset_level = 0.1; // -20 dB
