@@ -14,7 +14,7 @@
 //==============================================================================
 /**
 */
-class VibratoTransferAudioProcessorEditor  : public juce::AudioProcessorEditor
+class VibratoTransferAudioProcessorEditor  : public juce::AudioProcessorEditor, private juce::Slider::Listener
 {
 public:
     VibratoTransferAudioProcessorEditor (VibratoTransferAudioProcessor&);
@@ -28,6 +28,9 @@ private:
     // This reference is provided as a quick way for your editor to
     // access the processor object that created it.
     VibratoTransferAudioProcessor& audioProcessor;
+    juce::Slider ampSlider;
+    juce::Slider dtSlider;
+    void sliderValueChanged (juce::Slider* slider) override; // for Slider::Listener
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VibratoTransferAudioProcessorEditor)
 };
