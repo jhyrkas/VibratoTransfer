@@ -2,7 +2,7 @@
 //  Biquad.cpp
 //  VibratoTransfer - VST3
 //
-//  Created by Jeremy Hyrkas on 11/18/24.
+//  Created by author on 11/18/24.
 //
 
 #include "Biquad.hpp"

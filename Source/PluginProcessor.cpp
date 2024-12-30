@@ -30,8 +30,6 @@ envelopeBP(0, 0, 0, 0, 0) // Biquad
     memset(del_buffer, 0, del_length * sizeof(float));
     memset(sc_buffer, 0, V_H_NFFT * sizeof(float));
     memset(ac_buffer, 0, V_NFFT*sizeof(float));
-    
-    amp_scaler = 1.f; // testing making this bigger, but delete this later
 }
 
 VibratoTransferAudioProcessor::~VibratoTransferAudioProcessor()
@@ -249,15 +247,15 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     if (process_delay) {
         float w0 = T * twopi * (previous_f0_sum / previous_f0_count);
         for (int i = 0; i < blockSize; ++i) {
-            // STEP 2: buffer the input
+            // STEP 1: buffer the input
             del_buffer[write_pointer] = inputData[i];
             write_pointer = (write_pointer + 1) & del_length_mask;
             
-            // STEP 3: read from the delay line
+            // STEP 2: read from the delay line
             // read (right now do nothing...there should be a 512 sample delay)
             inputData[i] = last_env*fractional_delay_read(read_pointer);
             
-            // STEP 4: calculate the next delay based on the output of the bandpass filter and f0 analysis
+            // STEP 3: calculate the next delay based on the output of the bandpass filter and f0 analysis
             float bp_sample = butterBP.processSample(scData[i]);
             float hb_left = hilbert_left[3].processSample(hilbert_left[2].processSample(hilbert_left[1].processSample(hilbert_left[0].processSample(bp_sample))));
             float hb_right = hilbert_right[3].processSample(hilbert_right[2].processSample(hilbert_right[1].processSample(hilbert_right[0].processSample(bp_sample))));
@@ -293,9 +291,10 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         env_incr = e_diff < 0 ? -env_incr : env_incr;
         
         for (int i = 0; i < blockSize; ++i) {
-            // STEP 2: buffer the input
+            // STEP 1: buffer the input
             del_buffer[write_pointer] = inputData[i];
             write_pointer = (write_pointer + 1) & del_length_mask;
+            // STEP 2: output from the buffer while catching up dt and envelope if necessary
             inputData[i] = last_env * fractional_delay_read(read_pointer);
             // read pointer can still be fractional
             read_pointer = read_pointer + 1 - dt;

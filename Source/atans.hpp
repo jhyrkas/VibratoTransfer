@@ -2,7 +2,7 @@
 //  atans.hpp
 //  VibratoTransfer
 //
-//  Created by Jeremy Hyrkas on 11/27/24.
+//  Created by author on 11/27/24.
 //
 
 /*inline float atan_approx1(float x)

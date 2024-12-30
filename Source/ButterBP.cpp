@@ -3,7 +3,7 @@
 
     ButterBP.cpp
     Created: 9 Dec 2024 9:12:40am
-    Author:  Jeremy Hyrkas
+    Author:  author
 
   ==============================================================================
 */
