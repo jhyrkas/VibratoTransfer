@@ -371,7 +371,7 @@ float VibratoTransferAudioProcessor::find_f0_SNAC() {
 }
 
 bool VibratoTransferAudioProcessor::bufferTooQuiet(auto* data, int size) {
-    float l_thresh = 0.01f; // -40 dB TODO: parameterize?
+    float l_thresh = 0.001f; // -60 dB TODO: parameterize?
     int s_thresh = int(0.1*V_H_NFFT); // 10% of signal above thresh //TODO: better cheap env follower
     int samps_above_thresh = 0;
     for (int i = 0; i < size; ++i) {
