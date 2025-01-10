@@ -22,9 +22,9 @@ VibratoTransferAudioProcessor::VibratoTransferAudioProcessor()
                      #endif
                        ),
 #endif
-butterBP(),
+butterBP()
 //envelopeBP() // ButterBP
-envelopeBP(0, 0, 0, 0, 0) // Biquad
+//envelopeBP(0, 0, 0, 0, 0) // Biquad
 {
     // zero out delay buffer
     memset(del_buffer, 0, del_length * sizeof(float));
@@ -117,7 +117,7 @@ void VibratoTransferAudioProcessor::prepareToPlay (double sampleRate, int sample
     process_delay = false;
     bp_initialized = false;
     //envelopeBP.setParams(1.f, 10.f, fs); // 1 Hz thru 10 Hz, this does a buffer clear
-    initialize_env_bp(); // this does a buffer clear
+    initialize_env_bp(sampleRate); // this does a buffer clear
 }
 
 void VibratoTransferAudioProcessor::releaseResources()
@@ -200,7 +200,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                     previous_f0_sum = 0;
                     previous_f0_count = 0;
                     butterBP.clear();
-                    envelopeBP.clear();
+                    envelopeBP[0].clear(); envelopeBP[1].clear();
                     hilbert_left[0].clear(); hilbert_left[1].clear(); hilbert_left[2].clear(); hilbert_left[3].clear();
                     hilbert_right[0].clear(); hilbert_right[1].clear(); hilbert_right[2].clear(); hilbert_right[3].clear();
                     blocks_processed = 0;
@@ -266,10 +266,13 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             while (inst_freq > twopi) {inst_freq -= twopi;}
             last_phase = curr_phase;
             float dt = 1 - (inst_freq/w0);
-            float envBPout = envelopeBP.processSample( sqrt(hb_left*hb_left+last_right_out*last_right_out)
-                );
-            last_env = blocks_processed >= onset_time_blocks ? 1.f - amp_scaler*envBPout : 1.f;
+            float envBPout = envelopeBP[1].processSample(
+                                envelopeBP[0].processSample(
+                                    sqrt(hb_left*hb_left+last_right_out*last_right_out)
+                                                            )
+                                                         );
             // TODO: add a clip around last_env
+            last_env = blocks_processed >= onset_time_blocks ? 1.f + amp_scaler*envBPout : 1.f;
             read_pointer = blocks_processed >= onset_time_blocks ? (read_pointer + 1) - dt_scaler*dt : (read_pointer + 1);
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
             last_right_out = hb_right;
@@ -398,6 +401,36 @@ void VibratoTransferAudioProcessor::initialize_bp(float bp_low, float bp_high) {
     bp_initialized = true;
 }
 
+// using fixed audio rate envelopes
+void VibratoTransferAudioProcessor::initialize_env_bp(double sampleRate) {
+    // i don't know why the sampleRate is passed as a double but i'll check this pedantically
+    if (sampleRate > 44099.9 && sampleRate < 44100.1) { // 44.1k
+        envelopeBP[0].setParams(0.000000410689808f, 0.000000821379615f, 0.000000410689808f, -1.998378104629422f, 0.998379818242239f);
+        envelopeBP[1].setParams(1.000000000000000f, -2.000000000000000f, 1.000000000000000f, -1.999808068456053f, 0.999808092480796f);
+    } else if (sampleRate > 47999.9 && sampleRate < 48000.1) { // 48k
+        envelopeBP[0].setParams(0.000000346689433f, 0.000000693378867f, 0.000000346689433f, -1.998509913418212f, 0.998511359976696f);
+        envelopeBP[1].setParams(1.000000000000000f, -2.000000000000000f, 1.000000000000000f, -1.999823663313003f, 0.999823683592484f);
+    } else if (sampleRate > 88099.9 && sampleRate < 88100.1) { // 88.2k
+        envelopeBP[0].setParams(0.000000102718988f, 0.000000205437977f, 0.000000102718988f, -1.999189152153450f, 999189580730270);
+        envelopeBP[1].setParams(1.000000000000000f, -2.000000000000000f, 1.000000000000000f, -1.999904035631076f, 0.999904041637550f);
+    } else if (sampleRate > 95999.9 && sampleRate < 96000.1) { // 96k
+        envelopeBP[0].setParams(0.000000086708452f, 0.000000173416903f, 0.000000086708452f, -1.999255041000662f, 0.999255402774937f);
+        envelopeBP[1].setParams(1.000000000000000f, -2.000000000000000f, 1.000000000000000f, -1.999911832840767f, 0.999911837910861f);
+    } else if (sampleRate > 176399.9 && sampleRate < 176400.1) { // 176.4k
+        envelopeBP[0].setParams(0.000000025685567f, 0.000000051371135f, 0.000000025685567f, -1.999594601068364f, 0.999594708234283f);
+        envelopeBP[1].setParams(1.000000000000000f, -2.000000000000000f, 1.000000000000000f, -1.999952018166211f, 0.999952019667865f);
+    } else if (sampleRate > 191999.9 && sampleRate < 192000.1) { // 192k
+        envelopeBP[0].setParams(0.000000021681627f, 0.000000043363254f, 0.000000021681627f, -1.999627541598006f, 0.999627632058415f);
+        envelopeBP[1].setParams(1.000000000000000f, -2.000000000000000f, 1.000000000000000f, -1.999955916716380f, 0.999955917983931);
+    } else { // what should we do here?
+        // envelope biquads have all 0 coefficients and AM isn't processed
+        envelopeBP[0].setParams(0.f, 0.f, 0.f, 0.f, 0.f);
+        envelopeBP[1].setParams(0.f, 0.f, 0.f, 0.f, 0.f);
+    }
+}
+
+/*
+// OLD CODE: peaking biquad
 void VibratoTransferAudioProcessor::initialize_env_bp() {
     float f0 = 5.f;
     float bw = 4.f;
@@ -408,21 +441,5 @@ void VibratoTransferAudioProcessor::initialize_env_bp() {
     float norm_gain = 1.f/(1+beta);
     float ng_cos_w0_neg2 = -2.f*norm_gain*cosf(w0);
     envelopeBP.setParams(1.f-norm_gain, 0.f, norm_gain-1.f, ng_cos_w0_neg2, 2.f*norm_gain-1.f);
-}
-
-/* OLD CODE: peaking biquad
-// doing this now for the peaking filter, change later for butter chain
-void VibratoTransferAudioProcessor::initialize_bp(float bp_low, float bp_high) {
-    // more or less copied from the audio bashing
-    float f0 = (bp_low + bp_high) * 0.5;
-    float bw = (bp_high - bp_low);
-    float w0 = (twopi * f0) / fs;
-    float bwr = (twopi * bw) / fs;
-    float gain = 1.f / sqrt(2); // don't really need to compute every time
-    float beta = (sqrt(1.f - (gain*gain))/gain) * tanf(bwr*0.5f);
-    float norm_gain = 1.f/(1+beta);
-    float ng_cos_w0_neg2 = -2.f*norm_gain*cosf(w0);
-    peakingFilter.setParams(1.f-norm_gain, 0.f, norm_gain-1.f, ng_cos_w0_neg2, 2.f*norm_gain-1.f);
-    bp_initialized = true;
 }
 */

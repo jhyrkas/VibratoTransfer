@@ -104,7 +104,6 @@ private:
     float last_f0s[8] = {0.f, 0.f, 0.f, 0.f,0.f, 0.f, 0.f, 0.f}; // starting with 8, totally arbitrary
     int last_f0s_mask = 7;
     
-    
     int last_f0s_pointer = 0;
     
     // hilbert business
@@ -144,7 +143,8 @@ private:
     
     // envelope business
     //ButterBP envelopeBP;
-    Biquad envelopeBP;
+    Biquad envelopeBP[2] = {Biquad(0.f, 0.f, 0.f, 0.f, 0.f),
+                            Biquad(0.f, 0.f, 0.f, 0.f, 0.f)};
     float last_env = 1.f;
     
     // onset business TODO: figure most of this out
@@ -159,5 +159,5 @@ private:
     bool bufferTooQuiet(auto* data, int size);
     bool f0Stable();
     
-    void initialize_env_bp(); // peaking BP, delete if it is removed
+    void initialize_env_bp(double sampleRate); // peaking BP, delete if it is removed
 };
