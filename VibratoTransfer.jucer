@@ -5,6 +5,8 @@
               cppLanguageStandard="20">
   <MAINGROUP id="aAsmxH" name="VibratoTransfer">
     <GROUP id="{4883BCC0-29EF-39E3-4431-321F5A7F8740}" name="Source">
+      <FILE id="EclBR0" name="Butterworth.cpp" compile="1" resource="0" file="Source/Butterworth.cpp"/>
+      <FILE id="UQjCN2" name="Butterworth.h" compile="0" resource="0" file="Source/Butterworth.h"/>
       <FILE id="Vv61Sg" name="atans.hpp" compile="0" resource="0" file="Source/atans.hpp"/>
       <FILE id="FRJp8l" name="ButterBP.cpp" compile="1" resource="0" file="Source/ButterBP.cpp"/>
       <FILE id="n433Gj" name="ButterBP.h" compile="0" resource="0" file="Source/ButterBP.h"/>
