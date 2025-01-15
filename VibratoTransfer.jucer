@@ -8,8 +8,6 @@
       <FILE id="EclBR0" name="Butterworth.cpp" compile="1" resource="0" file="Source/Butterworth.cpp"/>
       <FILE id="UQjCN2" name="Butterworth.h" compile="0" resource="0" file="Source/Butterworth.h"/>
       <FILE id="Vv61Sg" name="atans.hpp" compile="0" resource="0" file="Source/atans.hpp"/>
-      <FILE id="FRJp8l" name="ButterBP.cpp" compile="1" resource="0" file="Source/ButterBP.cpp"/>
-      <FILE id="n433Gj" name="ButterBP.h" compile="0" resource="0" file="Source/ButterBP.h"/>
       <FILE id="BAtXz8" name="d_fft_mayer.c" compile="1" resource="0" file="Source/d_fft_mayer.c"/>
       <FILE id="RlYmen" name="d_fft_mayer.h" compile="0" resource="0" file="Source/d_fft_mayer.h"/>
       <FILE id="jPGboa" name="Biquad.cpp" compile="1" resource="0" file="Source/Biquad.cpp"/>

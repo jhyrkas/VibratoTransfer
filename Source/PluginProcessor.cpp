@@ -22,7 +22,7 @@ VibratoTransferAudioProcessor::VibratoTransferAudioProcessor()
                      #endif
                        ),
 #endif
-butterBP()
+bp_designer()
 //envelopeBP() // ButterBP
 //envelopeBP(0, 0, 0, 0, 0) // Biquad
 {
@@ -111,7 +111,9 @@ void VibratoTransferAudioProcessor::prepareToPlay (double sampleRate, int sample
     // TODO: memset delay and f0 bufs to 0?
     
     // TODO: double check, should we clear these here? problably in case fs changes
-    butterBP.clear();
+    for (Biquad quad : f0_bandpass) {
+        f0_bandpass.clear();
+    }
     hilbert_left[0].clear(); hilbert_left[1].clear(); hilbert_left[2].clear(); hilbert_left[3].clear();
     hilbert_right[0].clear(); hilbert_right[1].clear(); hilbert_right[2].clear(); hilbert_right[3].clear();
     process_delay = false;
@@ -199,7 +201,9 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                     last_f0s_pointer = (last_f0s_pointer+1) & last_f0s_mask;
                     previous_f0_sum = 0;
                     previous_f0_count = 0;
-                    butterBP.clear();
+                    for (Biquad quad : f0_bandpass) {
+                        quad.clear();
+                    }
                     envelopeBP[0].clear(); envelopeBP[1].clear();
                     hilbert_left[0].clear(); hilbert_left[1].clear(); hilbert_left[2].clear(); hilbert_left[3].clear();
                     hilbert_right[0].clear(); hilbert_right[1].clear(); hilbert_right[2].clear(); hilbert_right[3].clear();
@@ -256,7 +260,8 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             inputData[i] = last_env*fractional_delay_read(read_pointer);
             
             // STEP 3: calculate the next delay based on the output of the bandpass filter and f0 analysis
-            float bp_sample = butterBP.processSample(scData[i]);
+            // filters initialized with Butterworth cascade in reverse order
+            float bp_sample = f0_bandpass[0].processSample(f0_bandpass[1].processSample(scData[i]));
             float hb_left = hilbert_left[3].processSample(hilbert_left[2].processSample(hilbert_left[1].processSample(hilbert_left[0].processSample(bp_sample))));
             float hb_right = hilbert_right[3].processSample(hilbert_right[2].processSample(hilbert_right[1].processSample(hilbert_right[0].processSample(bp_sample))));
             float curr_phase = atan2f(last_right_out, hb_left);
@@ -266,8 +271,9 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             while (inst_freq > twopi) {inst_freq -= twopi;}
             last_phase = curr_phase;
             float dt = 1 - (inst_freq/w0);
-            float envBPout = envelopeBP[1].processSample(
-                                envelopeBP[0].processSample(
+            // filters initialized with Butterworth cascade in reverse order
+            float envBPout = envelopeBP[0].processSample(
+                                envelopeBP[1].processSample(
                                     sqrt(hb_left*hb_left+last_right_out*last_right_out)
                                                             )
                                                          );
@@ -397,35 +403,19 @@ bool VibratoTransferAudioProcessor::f0Stable() {
 }
 
 void VibratoTransferAudioProcessor::initialize_bp(float bp_low, float bp_high) {
-    butterBP.setParams(bp_low, bp_high, fs);
-    bp_initialized = true;
+    double gain = 0.0;
+    bp_initialized = bp_designer.bandPass(fs, bp_low, bp_high, 2, f0_bandpass, gain);
+    if (bp_initialized) {
+        f0_bandpass[1].gainCorrectNumerator(gain);
+    }
 }
 
 // using fixed audio rate envelopes
 void VibratoTransferAudioProcessor::initialize_env_bp(double sampleRate) {
-    // i don't know why the sampleRate is passed as a double but i'll check this pedantically
-    if (sampleRate > 44099.9 && sampleRate < 44100.1) { // 44.1k
-        envelopeBP[0].setParams(0.000000410689808f, 0.000000821379615f, 0.000000410689808f, -1.998378104629422f, 0.998379818242239f);
-        envelopeBP[1].setParams(1.000000000000000f, -2.000000000000000f, 1.000000000000000f, -1.999808068456053f, 0.999808092480796f);
-    } else if (sampleRate > 47999.9 && sampleRate < 48000.1) { // 48k
-        envelopeBP[0].setParams(0.000000346689433f, 0.000000693378867f, 0.000000346689433f, -1.998509913418212f, 0.998511359976696f);
-        envelopeBP[1].setParams(1.000000000000000f, -2.000000000000000f, 1.000000000000000f, -1.999823663313003f, 0.999823683592484f);
-    } else if (sampleRate > 88099.9 && sampleRate < 88100.1) { // 88.2k
-        envelopeBP[0].setParams(0.000000102718988f, 0.000000205437977f, 0.000000102718988f, -1.999189152153450f, 999189580730270);
-        envelopeBP[1].setParams(1.000000000000000f, -2.000000000000000f, 1.000000000000000f, -1.999904035631076f, 0.999904041637550f);
-    } else if (sampleRate > 95999.9 && sampleRate < 96000.1) { // 96k
-        envelopeBP[0].setParams(0.000000086708452f, 0.000000173416903f, 0.000000086708452f, -1.999255041000662f, 0.999255402774937f);
-        envelopeBP[1].setParams(1.000000000000000f, -2.000000000000000f, 1.000000000000000f, -1.999911832840767f, 0.999911837910861f);
-    } else if (sampleRate > 176399.9 && sampleRate < 176400.1) { // 176.4k
-        envelopeBP[0].setParams(0.000000025685567f, 0.000000051371135f, 0.000000025685567f, -1.999594601068364f, 0.999594708234283f);
-        envelopeBP[1].setParams(1.000000000000000f, -2.000000000000000f, 1.000000000000000f, -1.999952018166211f, 0.999952019667865f);
-    } else if (sampleRate > 191999.9 && sampleRate < 192000.1) { // 192k
-        envelopeBP[0].setParams(0.000000021681627f, 0.000000043363254f, 0.000000021681627f, -1.999627541598006f, 0.999627632058415f);
-        envelopeBP[1].setParams(1.000000000000000f, -2.000000000000000f, 1.000000000000000f, -1.999955916716380f, 0.999955917983931);
-    } else { // what should we do here?
-        // envelope biquads have all 0 coefficients and AM isn't processed
-        envelopeBP[0].setParams(0.f, 0.f, 0.f, 0.f, 0.f);
-        envelopeBP[1].setParams(0.f, 0.f, 0.f, 0.f, 0.f);
+    double gain = 0.0;
+    bool initialized = bp_designer.bandPass(sampleRate, 1.0, 10.0, 2, envelopeBP, gain);
+    if (initialized) {
+        envelopeBP[1].gainCorrectNumerator(gain);
     }
 }
 

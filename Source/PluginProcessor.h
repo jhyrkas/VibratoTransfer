@@ -10,9 +10,10 @@
 
 #include <math.h>
 #include <numbers>
+#include <vector>
 #include <JuceHeader.h>
 #include "Biquad.hpp"
-#include "ButterBP.h"
+#include "Butterworth.h"
 #include "d_fft_mayer.h"
 
 #define V_NFFT 4096
@@ -121,13 +122,8 @@ private:
     };
     float last_right_out = 0.f;
     
-    // biquad business
-    // TODO: figure out butter coefs and also number of biquads
-    Biquad butter_chain[2] = {
-        Biquad(0.f, 0.f, 0.f, 0.f, 0.f), // set these using setParams()
-        Biquad(0.f, 0.f, 0.f, 0.f, 0.f) // set these using setParams()
-    };
-    ButterBP butterBP; // TODO: this should go away in favor of butter chain
+    // f0 isolation bandpass filter
+    std::vector<Biquad> f0_bandpass;
     float filter_f0 = 0.f; // set using SNAC
     bool bp_initialized = false; // set after butter chain is set
     bool process_delay = false;
@@ -142,10 +138,9 @@ private:
     //float Dt = 0;
     
     // envelope business
-    //ButterBP envelopeBP;
-    Biquad envelopeBP[2] = {Biquad(0.f, 0.f, 0.f, 0.f, 0.f),
-                            Biquad(0.f, 0.f, 0.f, 0.f, 0.f)};
+    std::vector<Biquad> envelopeBP;
     float last_env = 1.f;
+    void initialize_env_bp(double sampleRate);
     
     // onset business TODO: figure most of this out
     float onset_level = 0.1; // -20 dB
@@ -158,6 +153,7 @@ private:
     void initialize_bp(float bp_low, float bp_high);
     bool bufferTooQuiet(auto* data, int size);
     bool f0Stable();
-    
-    void initialize_env_bp(double sampleRate); // peaking BP, delete if it is removed
+
+    // class to help us design butterworth filters
+    Butterworth bp_designer;
 };
