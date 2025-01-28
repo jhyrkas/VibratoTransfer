@@ -10,14 +10,17 @@
 
 #include <math.h>
 #include <numbers>
+#include <vector>
 #include <JuceHeader.h>
 #include "Biquad.hpp"
-#include "ButterBP.h"
+#include "Butterworth.h"
 #include "d_fft_mayer.h"
+#include "VibVisualizer.h"
 
 #define V_NFFT 4096
 #define V_H_NFFT 2048
 #define DEL_LAG 512
+#define AMP_CNST 0.708 // -3 dB
 
 //==============================================================================
 /**
@@ -64,10 +67,14 @@ public:
     //==============================================================================
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
+    
+    VibVisualizer& getDelayVisualizer();
+    VibVisualizer& getAmpVisualizer();
 
     // these should probably be set using public methods instead of being public values
     float dt_scaler = 1.f;
     float amp_scaler = 1.f;
+    float make_up_gain = 1.f;
 private:
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VibratoTransferAudioProcessor)
@@ -121,13 +128,8 @@ private:
     };
     float last_right_out = 0.f;
     
-    // biquad business
-    // TODO: figure out butter coefs and also number of biquads
-    Biquad butter_chain[2] = {
-        Biquad(0.f, 0.f, 0.f, 0.f, 0.f), // set these using setParams()
-        Biquad(0.f, 0.f, 0.f, 0.f, 0.f) // set these using setParams()
-    };
-    ButterBP butterBP; // TODO: this should go away in favor of butter chain
+    // f0 isolation bandpass filter
+    std::vector<Biquad> f0_bandpass;
     float filter_f0 = 0.f; // set using SNAC
     bool bp_initialized = false; // set after butter chain is set
     bool process_delay = false;
@@ -142,10 +144,9 @@ private:
     //float Dt = 0;
     
     // envelope business
-    //ButterBP envelopeBP;
-    Biquad envelopeBP[2] = {Biquad(0.f, 0.f, 0.f, 0.f, 0.f),
-                            Biquad(0.f, 0.f, 0.f, 0.f, 0.f)};
+    std::vector<Biquad> envelopeBP;
     float last_env = 1.f;
+    void initialize_env_bp(double sampleRate);
     
     // onset business TODO: figure most of this out
     float onset_level = 0.1; // -20 dB
@@ -158,6 +159,15 @@ private:
     void initialize_bp(float bp_low, float bp_high);
     bool bufferTooQuiet(auto* data, int size);
     bool f0Stable();
+
+    // class to help us design butterworth filters
+    Butterworth bp_designer;
     
-    void initialize_env_bp(double sampleRate); // peaking BP, delete if it is removed
+    // visualizing delay
+    VibVisualizer del_vis;
+    VibVisualizer amp_vis;
+    float dt_buffer[V_NFFT];
+    float amp_buffer[V_NFFT];
+    int vis_buffer_ptr = 0;
+    int vis_ptr_mask = V_NFFT - 1; // redudant but it keeps the code cleaner
 };
