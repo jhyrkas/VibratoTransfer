@@ -22,7 +22,8 @@ VibratoTransferAudioProcessor::VibratoTransferAudioProcessor()
                      #endif
                        ),
 #endif
-bp_designer()
+bp_designer(),
+del_vis()
 //envelopeBP() // ButterBP
 //envelopeBP(0, 0, 0, 0, 0) // Biquad
 {
@@ -30,6 +31,7 @@ bp_designer()
     memset(del_buffer, 0, del_length * sizeof(float));
     memset(sc_buffer, 0, V_H_NFFT * sizeof(float));
     memset(ac_buffer, 0, V_NFFT*sizeof(float));
+    memset(dt_buffer, 0, V_NFFT*sizeof(float));
 }
 
 VibratoTransferAudioProcessor::~VibratoTransferAudioProcessor()
@@ -120,6 +122,9 @@ void VibratoTransferAudioProcessor::prepareToPlay (double sampleRate, int sample
     bp_initialized = false;
     //envelopeBP.setParams(1.f, 10.f, fs); // 1 Hz thru 10 Hz, this does a buffer clear
     initialize_env_bp(sampleRate); // this does a buffer clear
+    
+    del_vis.clear();
+    del_vis.setSamplesPerBlock(samplesPerBlock);
 }
 
 void VibratoTransferAudioProcessor::releaseResources()
@@ -282,6 +287,12 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             read_pointer = blocks_processed >= onset_time_blocks ? (read_pointer + 1) - dt_scaler*dt : (read_pointer + 1);
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
             last_right_out = hb_right;
+            
+            // visualize dt
+            dt_buffer[dt_buffer_ptr] =  blocks_processed >= onset_time_blocks ? dt_scaler*dt : 0.f;
+            //dt_buffer[dt_buffer_ptr] = inputData[i]; // for visualizing test ONLY
+            del_vis.pushSample(dt_buffer + dt_buffer_ptr, 1); // is this right? also sample at a time is ugly
+            dt_buffer_ptr = (dt_buffer_ptr + 1) & dt_ptr_mask;
         }
         blocks_processed += 1;
     // not processing delay because sidechain is quiet or unstable
@@ -309,6 +320,12 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             read_pointer = read_pointer + 1 - dt;
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
             last_env += env_incr;
+            
+            // visualize dt
+            dt_buffer[dt_buffer_ptr] = dt;
+            //dt_buffer[dt_buffer_ptr] = inputData[i];
+            del_vis.pushSample(dt_buffer + dt_buffer_ptr, 1); // is this right? also sample at a time is ugly
+            dt_buffer_ptr = (dt_buffer_ptr + 1) & dt_ptr_mask;
         }
     }
 }
@@ -417,6 +434,10 @@ void VibratoTransferAudioProcessor::initialize_env_bp(double sampleRate) {
     if (initialized) {
         envelopeBP[1].gainCorrectNumerator(gain);
     }
+}
+
+VibVisualizer& VibratoTransferAudioProcessor::getDelayVisualizer() {
+    return del_vis;
 }
 
 /*

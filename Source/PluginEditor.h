@@ -30,7 +30,7 @@ private:
     VibratoTransferAudioProcessor& audioProcessor;
     juce::Slider ampSlider;
     juce::Slider dtSlider;
+    
     void sliderValueChanged (juce::Slider* slider) override; // for Slider::Listener
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VibratoTransferAudioProcessorEditor)
 };

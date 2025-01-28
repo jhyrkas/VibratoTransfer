@@ -15,7 +15,7 @@ VibratoTransferAudioProcessorEditor::VibratoTransferAudioProcessorEditor (Vibrat
 {
     // Make sure that before the constructor has finished, you've set the
     // editor's size to whatever you need it to be.
-    setSize (400, 300);
+    setSize (600, 300);
     
     // code modified from https://docs.juce.com/master/tutorial_code_basic_plugin.html
     
@@ -43,6 +43,8 @@ VibratoTransferAudioProcessorEditor::VibratoTransferAudioProcessorEditor (Vibrat
     
     ampSlider.addListener (this);
     dtSlider.addListener (this);
+    
+    addAndMakeVisible(audioProcessor.getDelayVisualizer());
 }
 
 VibratoTransferAudioProcessorEditor::~VibratoTransferAudioProcessorEditor()
@@ -66,6 +68,7 @@ void VibratoTransferAudioProcessorEditor::resized()
     // subcomponents in your editor..
     ampSlider.setBounds (40, 30, 20, getHeight() - 60);
     dtSlider.setBounds (80, 30, 20, getHeight() - 60);
+    audioProcessor.getDelayVisualizer().setBounds(130, 50, getWidth() - 150, getHeight() - 80);
 }
 
 void VibratoTransferAudioProcessorEditor::sliderValueChanged (juce::Slider* slider)

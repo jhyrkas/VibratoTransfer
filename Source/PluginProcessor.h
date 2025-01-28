@@ -15,6 +15,7 @@
 #include "Biquad.hpp"
 #include "Butterworth.h"
 #include "d_fft_mayer.h"
+#include "VibVisualizer.h"
 
 #define V_NFFT 4096
 #define V_H_NFFT 2048
@@ -65,6 +66,8 @@ public:
     //==============================================================================
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
+    
+    VibVisualizer& getDelayVisualizer();
 
     // these should probably be set using public methods instead of being public values
     float dt_scaler = 1.f;
@@ -156,4 +159,10 @@ private:
 
     // class to help us design butterworth filters
     Butterworth bp_designer;
+    
+    // visualizing delay
+    VibVisualizer del_vis;
+    float dt_buffer[V_NFFT];
+    int dt_buffer_ptr = 0;
+    int dt_ptr_mask = V_NFFT - 1; // redudant but it keeps the code cleaner
 };
