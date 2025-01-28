@@ -45,6 +45,7 @@ VibratoTransferAudioProcessorEditor::VibratoTransferAudioProcessorEditor (Vibrat
     dtSlider.addListener (this);
     
     addAndMakeVisible(audioProcessor.getDelayVisualizer());
+    addAndMakeVisible(audioProcessor.getAmpVisualizer());
 }
 
 VibratoTransferAudioProcessorEditor::~VibratoTransferAudioProcessorEditor()
@@ -59,7 +60,7 @@ void VibratoTransferAudioProcessorEditor::paint (juce::Graphics& g)
 
     g.setColour (juce::Colours::white);
     g.setFont (15.0f);
-    g.drawFittedText ("VibratoTransfer", getLocalBounds(), juce::Justification::centred, 1);
+    //g.drawFittedText ("VibratoTransfer", getLocalBounds(), juce::Justification::centred, 1);
 }
 
 void VibratoTransferAudioProcessorEditor::resized()
@@ -68,7 +69,8 @@ void VibratoTransferAudioProcessorEditor::resized()
     // subcomponents in your editor..
     ampSlider.setBounds (40, 30, 20, getHeight() - 60);
     dtSlider.setBounds (80, 30, 20, getHeight() - 60);
-    audioProcessor.getDelayVisualizer().setBounds(130, 50, getWidth() - 150, getHeight() - 80);
+    audioProcessor.getDelayVisualizer().setBounds(130, 20, getWidth() - 150, getHeight()/2 - 30);
+    audioProcessor.getAmpVisualizer().setBounds(130, getHeight()/2, getWidth() - 150, getHeight()/2 - 30);
 }
 
 void VibratoTransferAudioProcessorEditor::sliderValueChanged (juce::Slider* slider)

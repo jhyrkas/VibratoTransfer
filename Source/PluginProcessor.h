@@ -68,6 +68,7 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
     
     VibVisualizer& getDelayVisualizer();
+    VibVisualizer& getAmpVisualizer();
 
     // these should probably be set using public methods instead of being public values
     float dt_scaler = 1.f;
@@ -162,7 +163,9 @@ private:
     
     // visualizing delay
     VibVisualizer del_vis;
+    VibVisualizer amp_vis;
     float dt_buffer[V_NFFT];
-    int dt_buffer_ptr = 0;
-    int dt_ptr_mask = V_NFFT - 1; // redudant but it keeps the code cleaner
+    float amp_buffer[V_NFFT];
+    int vis_buffer_ptr = 0;
+    int vis_ptr_mask = V_NFFT - 1; // redudant but it keeps the code cleaner
 };

@@ -23,7 +23,8 @@ VibratoTransferAudioProcessor::VibratoTransferAudioProcessor()
                        ),
 #endif
 bp_designer(),
-del_vis()
+del_vis(),
+amp_vis()
 //envelopeBP() // ButterBP
 //envelopeBP(0, 0, 0, 0, 0) // Biquad
 {
@@ -32,6 +33,7 @@ del_vis()
     memset(sc_buffer, 0, V_H_NFFT * sizeof(float));
     memset(ac_buffer, 0, V_NFFT*sizeof(float));
     memset(dt_buffer, 0, V_NFFT*sizeof(float));
+    memset(amp_buffer, 0, V_NFFT*sizeof(float));
 }
 
 VibratoTransferAudioProcessor::~VibratoTransferAudioProcessor()
@@ -125,6 +127,8 @@ void VibratoTransferAudioProcessor::prepareToPlay (double sampleRate, int sample
     
     del_vis.clear();
     del_vis.setSamplesPerBlock(samplesPerBlock);
+    amp_vis.clear();
+    amp_vis.setSamplesPerBlock(samplesPerBlock);
 }
 
 void VibratoTransferAudioProcessor::releaseResources()
@@ -289,10 +293,12 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             last_right_out = hb_right;
             
             // visualize dt
-            dt_buffer[dt_buffer_ptr] =  blocks_processed >= onset_time_blocks ? dt_scaler*dt : 0.f;
-            //dt_buffer[dt_buffer_ptr] = inputData[i]; // for visualizing test ONLY
-            del_vis.pushSample(dt_buffer + dt_buffer_ptr, 1); // is this right? also sample at a time is ugly
-            dt_buffer_ptr = (dt_buffer_ptr + 1) & dt_ptr_mask;
+            dt_buffer[vis_buffer_ptr] =  blocks_processed >= onset_time_blocks ? dt_scaler*dt : 0.f;
+            amp_buffer[vis_buffer_ptr] = blocks_processed >= onset_time_blocks ? 1.f + amp_scaler*envBPout : 1.f;
+            // TODO: convert from sample-by-sample push to block push
+            del_vis.pushSample(dt_buffer + vis_buffer_ptr, 1);
+            amp_vis.pushSample(amp_buffer + vis_buffer_ptr, 1);
+            vis_buffer_ptr = (vis_buffer_ptr + 1) & vis_ptr_mask;
         }
         blocks_processed += 1;
     // not processing delay because sidechain is quiet or unstable
@@ -322,10 +328,13 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             last_env += env_incr;
             
             // visualize dt
-            dt_buffer[dt_buffer_ptr] = dt;
+            dt_buffer[vis_buffer_ptr] = dt;
+            amp_buffer[vis_buffer_ptr] = last_env;
             //dt_buffer[dt_buffer_ptr] = inputData[i];
-            del_vis.pushSample(dt_buffer + dt_buffer_ptr, 1); // is this right? also sample at a time is ugly
-            dt_buffer_ptr = (dt_buffer_ptr + 1) & dt_ptr_mask;
+            // TODO: convert from sample-by-sample push to block push
+            del_vis.pushSample(dt_buffer + vis_buffer_ptr, 1);
+            amp_vis.pushSample(amp_buffer + vis_buffer_ptr, 1);
+            vis_buffer_ptr = (vis_buffer_ptr + 1) & vis_ptr_mask;
         }
     }
 }
@@ -438,6 +447,10 @@ void VibratoTransferAudioProcessor::initialize_env_bp(double sampleRate) {
 
 VibVisualizer& VibratoTransferAudioProcessor::getDelayVisualizer() {
     return del_vis;
+}
+
+VibVisualizer& VibratoTransferAudioProcessor::getAmpVisualizer() {
+    return amp_vis;
 }
 
 /*
