@@ -20,6 +20,7 @@
 #define V_NFFT 4096
 #define V_H_NFFT 2048
 #define DEL_LAG 512
+#define AMP_CNST 0.708 // -3 dB
 
 //==============================================================================
 /**
@@ -73,6 +74,7 @@ public:
     // these should probably be set using public methods instead of being public values
     float dt_scaler = 1.f;
     float amp_scaler = 1.f;
+    float make_up_gain = 1.f;
 private:
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VibratoTransferAudioProcessor)

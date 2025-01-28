@@ -33,7 +33,7 @@ amp_vis()
     memset(sc_buffer, 0, V_H_NFFT * sizeof(float));
     memset(ac_buffer, 0, V_NFFT*sizeof(float));
     memset(dt_buffer, 0, V_NFFT*sizeof(float));
-    memset(amp_buffer, 0, V_NFFT*sizeof(float));
+    memset(amp_buffer, AMP_CNST, V_NFFT*sizeof(float));
 }
 
 VibratoTransferAudioProcessor::~VibratoTransferAudioProcessor()
@@ -266,7 +266,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             
             // STEP 2: read from the delay line
             // read (right now do nothing...there should be a 512 sample delay)
-            inputData[i] = last_env*fractional_delay_read(read_pointer);
+            inputData[i] = make_up_gain * last_env * fractional_delay_read(read_pointer);
             
             // STEP 3: calculate the next delay based on the output of the bandpass filter and f0 analysis
             // filters initialized with Butterworth cascade in reverse order
@@ -287,14 +287,14 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                                                             )
                                                          );
             // TODO: add a clip around last_env
-            last_env = blocks_processed >= onset_time_blocks ? 1.f + amp_scaler*envBPout : 1.f;
+            last_env = blocks_processed >= onset_time_blocks ? AMP_CNST + amp_scaler*envBPout : AMP_CNST;
             read_pointer = blocks_processed >= onset_time_blocks ? (read_pointer + 1) - dt_scaler*dt : (read_pointer + 1);
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
             last_right_out = hb_right;
             
             // visualize dt
             dt_buffer[vis_buffer_ptr] =  blocks_processed >= onset_time_blocks ? dt_scaler*dt : 0.f;
-            amp_buffer[vis_buffer_ptr] = blocks_processed >= onset_time_blocks ? 1.f + amp_scaler*envBPout : 1.f;
+            amp_buffer[vis_buffer_ptr] = blocks_processed >= onset_time_blocks ? AMP_CNST + amp_scaler*envBPout : AMP_CNST;
             // TODO: convert from sample-by-sample push to block push
             del_vis.pushSample(dt_buffer + vis_buffer_ptr, 1);
             amp_vis.pushSample(amp_buffer + vis_buffer_ptr, 1);
@@ -312,7 +312,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         float dt = fmin(fabsf(dt_diff/blockSize), 0.002);
         dt = dt_diff > 0 ? dt : -dt;
         // TODO: right here, keep track of last envelope, start ramping back to 1
-        float e_diff = 1.f - last_env;
+        float e_diff = AMP_CNST - last_env;
         float env_incr = fmin(fabsf(e_diff/blockSize),0.001);
         env_incr = e_diff < 0 ? -env_incr : env_incr;
         
@@ -321,7 +321,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             del_buffer[write_pointer] = inputData[i];
             write_pointer = (write_pointer + 1) & del_length_mask;
             // STEP 2: output from the buffer while catching up dt and envelope if necessary
-            inputData[i] = last_env * fractional_delay_read(read_pointer);
+            inputData[i] = make_up_gain * last_env * fractional_delay_read(read_pointer);
             // read pointer can still be fractional
             read_pointer = read_pointer + 1 - dt;
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);

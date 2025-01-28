@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include "math.h" // for log
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
@@ -30,6 +31,7 @@ private:
     VibratoTransferAudioProcessor& audioProcessor;
     juce::Slider ampSlider;
     juce::Slider dtSlider;
+    juce::Slider mugSlider; // make up gain
     
     void sliderValueChanged (juce::Slider* slider) override; // for Slider::Listener
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VibratoTransferAudioProcessorEditor)

@@ -27,22 +27,27 @@ VibratoTransferAudioProcessorEditor::VibratoTransferAudioProcessorEditor (Vibrat
     ampSlider.setTextValueSuffix ("AMTransferScaler");
     ampSlider.setValue(1.0);
  
-    // this function adds the slider to the editor
-    addAndMakeVisible (&ampSlider);
-
-    // these define the parameters of our slider object
     dtSlider.setSliderStyle (juce::Slider::LinearBarVertical);
     dtSlider.setRange (0.0, 2.0, 0.1);
     dtSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 90, 0);
     dtSlider.setPopupDisplayEnabled (true, false, this);
     dtSlider.setTextValueSuffix ("FMTransferScaler");
     dtSlider.setValue(1.0);
+    
+    mugSlider.setSliderStyle (juce::Slider::LinearBarVertical);
+    mugSlider.setRange (-6, 6, 0.1);
+    mugSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 90, 0);
+    mugSlider.setPopupDisplayEnabled (true, false, this);
+    mugSlider.setTextValueSuffix ("MakeUpGainScaler");
+    mugSlider.setValue(0.0);
  
-    // this function adds the slider to the editor
+    addAndMakeVisible (&ampSlider);
     addAndMakeVisible (&dtSlider);
+    addAndMakeVisible (&mugSlider);
     
     ampSlider.addListener (this);
     dtSlider.addListener (this);
+    mugSlider.addListener (this);
     
     addAndMakeVisible(audioProcessor.getDelayVisualizer());
     addAndMakeVisible(audioProcessor.getAmpVisualizer());
@@ -67,14 +72,16 @@ void VibratoTransferAudioProcessorEditor::resized()
 {
     // This is generally where you'll want to lay out the positions of any
     // subcomponents in your editor..
-    ampSlider.setBounds (40, 30, 20, getHeight() - 60);
-    dtSlider.setBounds (80, 30, 20, getHeight() - 60);
-    audioProcessor.getDelayVisualizer().setBounds(130, 20, getWidth() - 150, getHeight()/2 - 30);
-    audioProcessor.getAmpVisualizer().setBounds(130, getHeight()/2, getWidth() - 150, getHeight()/2 - 30);
+    ampSlider.setBounds (30, 30, 20, getHeight() - 60);
+    dtSlider.setBounds (60, 30, 20, getHeight() - 60);
+    mugSlider.setBounds (90, 30, 20, getHeight() - 60);
+    audioProcessor.getDelayVisualizer().setBounds(150, 20, getWidth() - 170, getHeight()/2 - 30);
+    audioProcessor.getAmpVisualizer().setBounds(150, getHeight()/2, getWidth() - 170, getHeight()/2 - 30);
 }
 
 void VibratoTransferAudioProcessorEditor::sliderValueChanged (juce::Slider* slider)
 {
     audioProcessor.amp_scaler = ampSlider.getValue();
     audioProcessor.dt_scaler = dtSlider.getValue();
+    audioProcessor.make_up_gain = powf(10.f, mugSlider.getValue()/20.f);
 }
