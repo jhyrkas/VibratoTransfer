@@ -171,6 +171,9 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     juce::ScopedNoDenormals noDenormals;
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
+    
+    // just always push blockSize samples (this means we can probably decreased the buffer sizes
+    vis_buffer_ptr = 0;
 
     // In case we have more outputs than inputs, this code clears any output
     // channels that didn't contain input data, (because these aren't
@@ -298,7 +301,8 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             // TODO: convert from sample-by-sample push to block push
             del_vis.pushSample(dt_buffer + vis_buffer_ptr, 1);
             amp_vis.pushSample(amp_buffer + vis_buffer_ptr, 1);
-            vis_buffer_ptr = (vis_buffer_ptr + 1) & vis_ptr_mask;
+            //vis_buffer_ptr = (vis_buffer_ptr + 1) & vis_ptr_mask;
+            vis_buffer_ptr++;
         }
         blocks_processed += 1;
     // not processing delay because sidechain is quiet or unstable
@@ -334,9 +338,12 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             // TODO: convert from sample-by-sample push to block push
             del_vis.pushSample(dt_buffer + vis_buffer_ptr, 1);
             amp_vis.pushSample(amp_buffer + vis_buffer_ptr, 1);
-            vis_buffer_ptr = (vis_buffer_ptr + 1) & vis_ptr_mask;
+            //vis_buffer_ptr = (vis_buffer_ptr + 1) & vis_ptr_mask;
+            vis_buffer_ptr++;
         }
     }
+    //del_vis.pushBuffer(dt_buffer, 1, blockSize);
+    //const float *const *channelData = &dt_buffer;
 }
 
 //==============================================================================
