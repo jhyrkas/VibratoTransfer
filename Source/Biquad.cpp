@@ -35,6 +35,19 @@ float Biquad::processSample(float sample) {
     return outp;
 }
 
+void Biquad::processBlock(float* in_samples, float* out_samples, int num_samples) {
+    for (int i = 0; i < num_samples; ++i) {
+        float sample = in_samples[i];
+        float outp = b0 * sample + b1 * b_zi[0] + b2 * b_zi[1]
+            - a1 * a_zi[0] - a2 * a_zi[1];
+        b_zi[1] = b_zi[0];
+        b_zi[0] = sample;
+        a_zi[1] = a_zi[0];
+        a_zi[0] = outp;
+        out_samples[i] = outp;
+    }
+}
+
 // TODO: maybe in the future we allow the zi to stick around?
 void Biquad::setParams(float _b0, float _b1, float _b2, float _a1, float _a2) {
     b0 = _b0;
