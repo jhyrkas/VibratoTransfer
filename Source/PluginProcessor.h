@@ -19,6 +19,7 @@
 
 #define V_NFFT 4096
 #define V_H_NFFT 2048
+#define MAX_BUF 2048
 #define DEL_LAG 512
 #define AMP_CNST 0.708 // -3 dB
 
@@ -105,12 +106,8 @@ private:
     bool f0_stabilized = false;
     bool filter_initialized = false;
     
-    //float last_f0s[4] = {0.f, 0.f, 0.f, 0.f}; // starting with 4, totally arbitrary
-    //int last_f0s_mask = 3;
-    
     float last_f0s[8] = {0.f, 0.f, 0.f, 0.f,0.f, 0.f, 0.f, 0.f}; // starting with 8, totally arbitrary
     int last_f0s_mask = 7;
-    
     int last_f0s_pointer = 0;
     
     // hilbert business
@@ -127,12 +124,15 @@ private:
         Biquad(0.997500f, 0.f, -1.f, 0.f, -0.997500f)
     };
     float last_right_out = 0.f;
+    float hilbert_left_buf[MAX_BUF];
+    float hilbert_right_buf[MAX_BUF];
     
     // f0 isolation bandpass filter
     std::vector<Biquad> f0_bandpass;
     float filter_f0 = 0.f; // set using SNAC
     bool bp_initialized = false; // set after butter chain is set
     bool process_delay = false;
+    float bp_buf[MAX_BUF];
     
     // delay function business
     float last_phase = 0;
@@ -140,6 +140,7 @@ private:
     int averaging_frames; // set in prepareToPlay using fs
     float previous_f0_sum = 0;
     int previous_f0_count = 0; // using these two to calculate previous f0 mean
+    float phase_buf[MAX_BUF];
     // cumsum of RFS (this is effectively the last offset of the delay function)
     //float Dt = 0;
     
@@ -147,6 +148,7 @@ private:
     std::vector<Biquad> envelopeBP;
     float last_env = 1.f;
     void initialize_env_bp(double sampleRate);
+    float env_buf[MAX_BUF];
     
     // onset business TODO: figure most of this out
     float onset_level = 0.1; // -20 dB
@@ -166,8 +168,6 @@ private:
     // visualizing delay
     VibVisualizer del_vis;
     VibVisualizer amp_vis;
-    float dt_buffer[V_NFFT];
-    float amp_buffer[V_NFFT];
-    int vis_buffer_ptr = 0;
-    int vis_ptr_mask = V_NFFT - 1; // redudant but it keeps the code cleaner
+    float dt_buffer[MAX_BUF];
+    float amp_buffer[MAX_BUF];
 };

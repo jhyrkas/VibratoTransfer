@@ -171,9 +171,6 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     juce::ScopedNoDenormals noDenormals;
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
-    
-    // just always push blockSize samples (this means we can probably decreased the buffer sizes
-    vis_buffer_ptr = 0;
 
     // In case we have more outputs than inputs, this code clears any output
     // channels that didn't contain input data, (because these aren't
@@ -262,49 +259,64 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     // putting the if statement outside of the processing loop
     if (process_delay) {
         float w0 = T * twopi * (previous_f0_sum / previous_f0_count);
+        // STEP 1: buffer the input
         for (int i = 0; i < blockSize; ++i) {
-            // STEP 1: buffer the input
             del_buffer[write_pointer] = inputData[i];
             write_pointer = (write_pointer + 1) & del_length_mask;
+        }
+        
+        // STEP 2: f0 bandpass filter and perform the hilbert transform
+        // filters initialized with Butterworth cascade in reverse order
+        f0_bandpass[1].processBlock(scData, bp_buf, blockSize);
+        f0_bandpass[0].processBlockInPlace(bp_buf, blockSize);
+        hilbert_left[0].processBlock(bp_buf, hilbert_left_buf, blockSize);
+        hilbert_left[1].processBlockInPlace(hilbert_left_buf, blockSize);
+        hilbert_left[2].processBlockInPlace(hilbert_left_buf, blockSize);
+        hilbert_left[3].processBlockInPlace(hilbert_left_buf, blockSize);
+        hilbert_right[0].processBlock(bp_buf, hilbert_right_buf, blockSize);
+        hilbert_right[1].processBlockInPlace(hilbert_right_buf, blockSize);
+        hilbert_right[2].processBlockInPlace(hilbert_right_buf, blockSize);
+        hilbert_right[3].processBlockInPlace(hilbert_right_buf, blockSize);
+        
+        // STEP 3: calculate the phase, envelope and filter envelope
+        phase_buf[0] = atan2f(last_right_out, hilbert_left_buf[0]);
+        env_buf[0] = sqrtf(hilbert_left_buf[0]*hilbert_left_buf[0]+last_right_out*last_right_out);
+        for (int i = 1; i < blockSize; ++i) {
+            phase_buf[i] = atan2f(hilbert_right_buf[i-1], hilbert_left_buf[i]);
+            env_buf[i] = sqrtf(hilbert_left_buf[i]*hilbert_left_buf[i] +
+                               hilbert_right_buf[i-1]*hilbert_right_buf[i-1]);
+        }
+        last_right_out = hilbert_right_buf[blockSize-1];
+        envelopeBP[1].processBlockInPlace(env_buf, blockSize);
+        envelopeBP[0].processBlockInPlace(env_buf, blockSize);
+        
+        // STEP 4: perform transfer
+        bool performTransfer = blocks_processed >= onset_time_blocks;
+        for (int i = 0; i < blockSize; ++i) {
+            // TODO: add a clip around last_env
+            float env = performTransfer ? AMP_CNST + amp_scaler*env_buf[i] : AMP_CNST;
+            inputData[i] = make_up_gain * env * fractional_delay_read(read_pointer);
+            //inputData[i] = make_up_gain * fractional_delay_read(read_pointer);
             
-            // STEP 2: read from the delay line
-            // read (right now do nothing...there should be a 512 sample delay)
-            inputData[i] = make_up_gain * last_env * fractional_delay_read(read_pointer);
-            
-            // STEP 3: calculate the next delay based on the output of the bandpass filter and f0 analysis
-            // filters initialized with Butterworth cascade in reverse order
-            float bp_sample = f0_bandpass[0].processSample(f0_bandpass[1].processSample(scData[i]));
-            float hb_left = hilbert_left[3].processSample(hilbert_left[2].processSample(hilbert_left[1].processSample(hilbert_left[0].processSample(bp_sample))));
-            float hb_right = hilbert_right[3].processSample(hilbert_right[2].processSample(hilbert_right[1].processSample(hilbert_right[0].processSample(bp_sample))));
-            float curr_phase = atan2f(last_right_out, hb_left);
-            float inst_freq = curr_phase - last_phase;
+            float inst_freq = i > 0 ? phase_buf[i] - phase_buf[i-1] : phase_buf[i] - last_phase;
             // phase wrapping - too aggressive?
             while (inst_freq < 0) {inst_freq += twopi;}
             while (inst_freq > twopi) {inst_freq -= twopi;}
-            last_phase = curr_phase;
             float dt = 1 - (inst_freq/w0);
-            // filters initialized with Butterworth cascade in reverse order
-            float envBPout = envelopeBP[0].processSample(
-                                envelopeBP[1].processSample(
-                                    sqrt(hb_left*hb_left+last_right_out*last_right_out)
-                                                            )
-                                                         );
-            // TODO: add a clip around last_env
-            last_env = blocks_processed >= onset_time_blocks ? AMP_CNST + amp_scaler*envBPout : AMP_CNST;
-            read_pointer = blocks_processed >= onset_time_blocks ? (read_pointer + 1) - dt_scaler*dt : (read_pointer + 1);
+            read_pointer = performTransfer ? (read_pointer + 1) - dt_scaler*dt : (read_pointer + 1);
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
-            last_right_out = hb_right;
             
             // visualize dt
-            dt_buffer[vis_buffer_ptr] =  blocks_processed >= onset_time_blocks ? dt_scaler*dt : 0.f;
-            amp_buffer[vis_buffer_ptr] = blocks_processed >= onset_time_blocks ? AMP_CNST + amp_scaler*envBPout : AMP_CNST;
+            dt_buffer[i] =  performTransfer ? dt_scaler*dt : 0.f;
+            amp_buffer[i] = performTransfer ? AMP_CNST + amp_scaler*env : AMP_CNST;
             // TODO: convert from sample-by-sample push to block push
-            del_vis.pushSample(dt_buffer + vis_buffer_ptr, 1);
-            amp_vis.pushSample(amp_buffer + vis_buffer_ptr, 1);
-            //vis_buffer_ptr = (vis_buffer_ptr + 1) & vis_ptr_mask;
-            vis_buffer_ptr++;
+            del_vis.pushSample(dt_buffer + i, 1);
+            amp_vis.pushSample(amp_buffer + i, 1);
         }
+        // post loop cleanup
+        last_phase = phase_buf[blockSize-1];
         blocks_processed += 1;
+        last_env = performTransfer ? AMP_CNST + amp_scaler*env_buf[blockSize-1] : AMP_CNST;
     // not processing delay because sidechain is quiet or unstable
     } else {
         // see if we need to subtly reset the read pointer
@@ -332,14 +344,11 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             last_env += env_incr;
             
             // visualize dt
-            dt_buffer[vis_buffer_ptr] = dt;
-            amp_buffer[vis_buffer_ptr] = last_env;
-            //dt_buffer[dt_buffer_ptr] = inputData[i];
+            dt_buffer[i] = dt;
+            amp_buffer[i] = last_env;
             // TODO: convert from sample-by-sample push to block push
-            del_vis.pushSample(dt_buffer + vis_buffer_ptr, 1);
-            amp_vis.pushSample(amp_buffer + vis_buffer_ptr, 1);
-            //vis_buffer_ptr = (vis_buffer_ptr + 1) & vis_ptr_mask;
-            vis_buffer_ptr++;
+            del_vis.pushSample(dt_buffer + i, 1);
+            amp_vis.pushSample(amp_buffer + i, 1);
         }
     }
     //del_vis.pushBuffer(dt_buffer, 1, blockSize);

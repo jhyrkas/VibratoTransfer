@@ -19,6 +19,7 @@ public:
     // TODO: basically, this is multiple for-loops versus many function calls
     virtual float processSample(float sample);
     virtual void processBlock (float* in_samples, float* out_samples, int num_samples);
+    virtual void processBlockInPlace (float* in_samples, int num_samples);
     virtual void setParams(float _b0, float _b1, float _b2, float _a1, float _a2);
     virtual void clear();
     
