@@ -146,8 +146,8 @@ private:
     
     // envelope business
     std::vector<Biquad> envelopeBP;
-    float last_env = 1.f;
-    void initialize_env_bp(double sampleRate);
+    float last_env = AMP_CNST;
+    void initialize_env_bp();
     float env_buf[MAX_BUF];
     
     // onset business TODO: figure most of this out
@@ -168,6 +168,6 @@ private:
     // visualizing delay
     VibVisualizer del_vis;
     VibVisualizer amp_vis;
-    float dt_buffer[MAX_BUF];
-    float amp_buffer[MAX_BUF];
+    juce::AudioBuffer<float> dt_buffer;
+    juce::AudioBuffer<float> amp_buffer;
 };
