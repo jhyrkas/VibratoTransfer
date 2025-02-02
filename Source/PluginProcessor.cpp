@@ -264,14 +264,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     process_delay = process_delay && !bufferTooQuiet(scData, blockSize);
     // putting the if statement outside of the processing loop
     if (process_delay) {
-        float w0 = T * twopi * (previous_f0_sum / previous_f0_count);
-        // STEP 1: buffer the input
-        for (int i = 0; i < blockSize; ++i) {
-            del_buffer[write_pointer] = inputData[i];
-            write_pointer = (write_pointer + 1) & del_length_mask;
-        }
-        
-        // STEP 2: f0 bandpass filter and perform the hilbert transform
+        // STEP 1: f0 bandpass filter and perform the hilbert transform
         // filters initialized with Butterworth cascade in reverse order
         f0_bandpass[1].processBlock(scData, bp_buf, blockSize);
         f0_bandpass[0].processBlockInPlace(bp_buf, blockSize);
@@ -284,7 +277,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         hilbert_right[2].processBlockInPlace(hilbert_right_buf, blockSize);
         hilbert_right[3].processBlockInPlace(hilbert_right_buf, blockSize);
         
-        // STEP 3: calculate the phase, envelope and filter envelope
+        // STEP 2: calculate the phase, envelope and filter envelope
         phase_buf[0] = atan2f(last_right_out, hilbert_left_buf[0]);
         env_buf[0] = sqrtf(hilbert_left_buf[0]*hilbert_left_buf[0]+last_right_out*last_right_out);
         for (int i = 1; i < blockSize; ++i) {
@@ -296,13 +289,19 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         envelopeBP[1].processBlockInPlace(env_buf, blockSize);
         envelopeBP[0].processBlockInPlace(env_buf, blockSize);
         
-        // STEP 4: perform transfer
+        // STEP 3: perform transfer
+        float w0 = T * twopi * (previous_f0_sum / previous_f0_count);
         bool performTransfer = blocks_processed >= onset_time_blocks;
         for (int i = 0; i < blockSize; ++i) {
+            // buffer input
+            del_buffer[write_pointer] = inputData[i];
+            write_pointer = (write_pointer + 1) & del_length_mask;
+            
             // TODO: add a clip around last_env
             float env = performTransfer ?
-                        (i == 0 ? last_env : AMP_CNST + amp_scaler*env_buf[i-1]) :
+                        (i == 0 ? AMP_CNST + amp_scaler*last_env : AMP_CNST + amp_scaler*env_buf[i-1]) :
                         AMP_CNST;
+            // output from buffer
             inputData[i] = make_up_gain * env * fractional_delay_read(read_pointer);
             //inputData[i] = make_up_gain * fractional_delay_read(read_pointer);
             
@@ -316,13 +315,13 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             
             // visualize dt
             dt_buffer.setSample(0, i, performTransfer ? dt_scaler*dt : 0.f);
-            amp_buffer.setSample(0, i, performTransfer ? AMP_CNST + amp_scaler*env : AMP_CNST);
+            amp_buffer.setSample(0, i, performTransfer ? env : AMP_CNST);
         }
         // post loop cleanup
         last_phase = phase_buf[blockSize-1];
         last_env = env_buf[blockSize-1];
         blocks_processed += 1;
-        last_env = performTransfer ? AMP_CNST + amp_scaler*env_buf[blockSize-1] : AMP_CNST;
+        last_env = env_buf[blockSize-1];
     // not processing delay because sidechain is quiet or unstable
     } else {
         // see if we need to subtly reset the read pointer
@@ -339,10 +338,10 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         env_incr = e_diff < 0 ? -env_incr : env_incr;
         
         for (int i = 0; i < blockSize; ++i) {
-            // STEP 1: buffer the input
+            // buffer the input
             del_buffer[write_pointer] = inputData[i];
             write_pointer = (write_pointer + 1) & del_length_mask;
-            // STEP 2: output from the buffer while catching up dt and envelope if necessary
+            // output from the buffer while catching up dt and envelope if necessary
             inputData[i] = make_up_gain * last_env * fractional_delay_read(read_pointer);
             // read pointer can still be fractional
             read_pointer = read_pointer + 1 - dt;
