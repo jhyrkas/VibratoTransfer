@@ -22,7 +22,7 @@ VibratoTransferAudioProcessor::VibratoTransferAudioProcessor()
                      #endif
                        ),
 #endif
-bp_designer(),
+b_designer(),
 del_vis(),
 amp_vis(),
 dt_buffer(1, MAX_BUF),
@@ -34,7 +34,7 @@ amp_buffer(1, MAX_BUF)
     memset(del_buffer, 0, del_length * sizeof(float));
     memset(sc_buffer, 0, V_H_NFFT * sizeof(float));
     memset(ac_buffer, 0, V_NFFT*sizeof(float));
-    memset(phase_buf, 0, MAX_BUF*sizeof(float));
+    memset(dt_buf, 0, MAX_BUF*sizeof(float));
     memset(env_buf, 0, MAX_BUF*sizeof(float));
 }
 
@@ -126,6 +126,7 @@ void VibratoTransferAudioProcessor::prepareToPlay (double sampleRate, int sample
     bp_initialized = false;
     //envelopeBP.setParams(1.f, 10.f, fs); // 1 Hz thru 10 Hz, this does a buffer clear
     initialize_env_bp(); // this does a buffer clear
+    initialize_dt_hp();
     
     del_vis.clear();
     del_vis.setSamplesPerBlock(samplesPerBlock);
@@ -220,6 +221,9 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                     for (Biquad quad : envelopeBP) {
                         quad.clear();
                     }
+                    for (Biquad quad : dt_highpass) {
+                        quad.clear();
+                    }
                     hilbert_left[0].clear(); hilbert_left[1].clear(); hilbert_left[2].clear(); hilbert_left[3].clear();
                     hilbert_right[0].clear(); hilbert_right[1].clear(); hilbert_right[2].clear(); hilbert_right[3].clear();
                     blocks_processed = 0;
@@ -277,21 +281,35 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         hilbert_right[2].processBlockInPlace(hilbert_right_buf, blockSize);
         hilbert_right[3].processBlockInPlace(hilbert_right_buf, blockSize);
         
-        // STEP 2: calculate the phase, envelope and filter envelope
-        phase_buf[0] = atan2f(last_right_out, hilbert_left_buf[0]);
+        // STEP 2: calculate the phase, dt, envelope and filter envelope
+        bool performTransfer = blocks_processed >= onset_time_blocks;
+        float w0 = T * twopi * (previous_f0_sum / previous_f0_count);
+        float last_phase_tmp = last_phase;
+        last_phase = atan2f(last_right_out, hilbert_left_buf[0]);
+        float inst_freq = last_phase - last_phase_tmp;
+        // phase wrapping - too aggressive?
+        while (inst_freq < 0) {inst_freq += twopi;}
+        while (inst_freq > twopi) {inst_freq -= twopi;}
+        dt_buf[0] = performTransfer ? 1 - (inst_freq/w0) : 0;
         env_buf[0] = sqrtf(hilbert_left_buf[0]*hilbert_left_buf[0]+last_right_out*last_right_out);
         for (int i = 1; i < blockSize; ++i) {
-            phase_buf[i] = atan2f(hilbert_right_buf[i-1], hilbert_left_buf[i]);
+            last_phase_tmp = last_phase;
+            last_phase = atan2f(hilbert_right_buf[i-1], hilbert_left_buf[i]);
+            inst_freq = last_phase - last_phase_tmp;
+            // phase wrapping - too aggressive?
+            while (inst_freq < 0) {inst_freq += twopi;}
+            while (inst_freq > twopi) {inst_freq -= twopi;}
+            dt_buf[i] = performTransfer ? 1 - (inst_freq/w0) : 0;
+            
             env_buf[i] = sqrtf(hilbert_left_buf[i]*hilbert_left_buf[i] +
                                hilbert_right_buf[i-1]*hilbert_right_buf[i-1]);
         }
         last_right_out = hilbert_right_buf[blockSize-1];
         envelopeBP[1].processBlockInPlace(env_buf, blockSize);
         envelopeBP[0].processBlockInPlace(env_buf, blockSize);
+        dt_highpass[0].processBlockInPlace(dt_buf, blockSize);
         
         // STEP 3: perform transfer
-        float w0 = T * twopi * (previous_f0_sum / previous_f0_count);
-        bool performTransfer = blocks_processed >= onset_time_blocks;
         for (int i = 0; i < blockSize; ++i) {
             // buffer input
             del_buffer[write_pointer] = inputData[i];
@@ -304,21 +322,15 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             // output from buffer
             inputData[i] = make_up_gain * env * fractional_delay_read(read_pointer);
             //inputData[i] = make_up_gain * fractional_delay_read(read_pointer);
-            
-            float inst_freq = i == 0 ? phase_buf[0] - last_phase : phase_buf[i] - phase_buf[i-1];
-            // phase wrapping - too aggressive?
-            while (inst_freq < 0) {inst_freq += twopi;}
-            while (inst_freq > twopi) {inst_freq -= twopi;}
-            float dt = 1 - (inst_freq/w0);
-            read_pointer = performTransfer ? (read_pointer + 1) - dt_scaler*dt : (read_pointer + 1);
+
+            read_pointer = performTransfer ? (read_pointer + 1) - dt_scaler*dt_buf[i] : (read_pointer + 1);
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
             
             // visualize dt
-            dt_buffer.setSample(0, i, performTransfer ? dt_scaler*dt : 0.f);
+            dt_buffer.setSample(0, i, performTransfer ? dt_scaler*dt_buf[i] : 0.f);
             amp_buffer.setSample(0, i, performTransfer ? env : AMP_CNST);
         }
         // post loop cleanup
-        last_phase = phase_buf[blockSize-1];
         last_env = env_buf[blockSize-1];
         blocks_processed += 1;
         last_env = env_buf[blockSize-1];
@@ -448,18 +460,25 @@ bool VibratoTransferAudioProcessor::f0Stable() {
 
 void VibratoTransferAudioProcessor::initialize_bp(float bp_low, float bp_high) {
     double gain = 0.0;
-    bp_initialized = bp_designer.bandPass(fs, bp_low, bp_high, 2, f0_bandpass, gain);
+    bp_initialized = b_designer.bandPass(fs, bp_low, bp_high, 2, f0_bandpass, gain);
     if (bp_initialized) {
         f0_bandpass[1].gainCorrectNumerator(gain);
     }
 }
 
-// using fixed audio rate envelopes
 void VibratoTransferAudioProcessor::initialize_env_bp() {
     double gain = 0.0;
-    bool initialized = bp_designer.bandPass(fs, 1.0, 10.0, 2, envelopeBP, gain);
+    bool initialized = b_designer.bandPass(fs, 1.0, 10.0, 2, envelopeBP, gain);
     if (initialized) {
         envelopeBP[1].gainCorrectNumerator(gain);
+    }
+}
+
+void VibratoTransferAudioProcessor::initialize_dt_hp() {
+    double gain = 0.0;
+    bool initialized = b_designer.hiPass(fs, 1.0, 0.f, 2, dt_highpass, gain);
+    if (initialized) {
+        dt_highpass[0].gainCorrectNumerator(gain);
     }
 }
 

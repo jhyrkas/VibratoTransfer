@@ -92,6 +92,8 @@ private:
     float del_buffer[V_NFFT]; // this buffers the input signal
     int write_pointer = DEL_LAG; // initial delay offset
     float read_pointer = 0;
+    std::vector<Biquad> dt_highpass;
+    void initialize_dt_hp();
     
     // f0 analysis business
     // 2*NFFT because we store the FFT result in place
@@ -140,7 +142,8 @@ private:
     int averaging_frames; // set in prepareToPlay using fs
     float previous_f0_sum = 0;
     int previous_f0_count = 0; // using these two to calculate previous f0 mean
-    float phase_buf[MAX_BUF];
+    float dt_buf[MAX_BUF];
+    
     // cumsum of RFS (this is effectively the last offset of the delay function)
     //float Dt = 0;
     
@@ -163,7 +166,7 @@ private:
     bool f0Stable();
 
     // class to help us design butterworth filters
-    Butterworth bp_designer;
+    Butterworth b_designer;
     
     // visualizing delay
     VibVisualizer del_vis;
