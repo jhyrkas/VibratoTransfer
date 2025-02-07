@@ -19,7 +19,6 @@ the vibrato patterns in the target signal.
 
 The algorithms in this plug-in are described in a previously published and upcoming research paper. The plug-in
 implements a real-time vibrato transfer but is not optimized like a commercial plug-in. 
-Original code in this repo uses the MIT License (see language below). 
-**However**, two open-source implementations are used: Ron Mayer's FFT implementation, found in Pure Data and elsewhere, and
+Two open-source implementations are used: Ron Mayer's FFT implementation, found in Pure Data and elsewhere, and
 Ruoho Ruotsi's implementation of a Butterworth bandpass filter which is based on the butter() function in MATLAB.
 Sources for these implementations are cited in the code and these implementations carry their own licenses.
