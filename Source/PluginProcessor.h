@@ -89,7 +89,8 @@ private:
     // TODO: use DEFINE for del_length?
     int del_length = V_NFFT; // TODO: think about if this should be longer/shorter
     int del_length_mask = V_NFFT - 1;
-    float del_buffer[V_NFFT]; // this buffers the input signal
+    float del_buffer_l[V_NFFT]; // this buffers the left input channel
+    float del_buffer_r[V_NFFT]; // this buffers the right input channel
     int write_pointer = DEL_LAG; // initial delay offset
     float read_pointer = 0;
     std::vector<Biquad> dt_highpass;
@@ -159,7 +160,7 @@ private:
     int blocks_processed = 0;
         
     // functions I added
-    float fractional_delay_read(float index);
+    void fractional_delay_read(float index, float& left, float& right);
     float find_f0_SNAC();
     void initialize_bp(float bp_low, float bp_high);
     bool bufferTooQuiet(auto* data, int size);

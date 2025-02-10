@@ -14,12 +14,9 @@ VibratoTransferAudioProcessor::VibratoTransferAudioProcessor()
 :
 #ifndef JucePlugin_PreferredChannelConfigurations
      AudioProcessor (BusesProperties()
-                     #if ! JucePlugin_IsMidiEffect
-                      #if ! JucePlugin_IsSynth
                        .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                      #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
-                     #endif
+                       .withInput("Sidechain", juce::AudioChannelSet::stereo(), true)
                        ),
 #endif
 b_designer(),
@@ -31,7 +28,8 @@ amp_buffer(1, MAX_BUF)
 //envelopeBP(0, 0, 0, 0, 0) // Biquad
 {
     // zero out delay buffer
-    memset(del_buffer, 0, del_length * sizeof(float));
+    memset(del_buffer_l, 0, del_length * sizeof(float));
+    memset(del_buffer_r, 0, del_length * sizeof(float));
     memset(sc_buffer, 0, V_H_NFFT * sizeof(float));
     memset(ac_buffer, 0, V_NFFT*sizeof(float));
     memset(dt_buf, 0, MAX_BUF*sizeof(float));
@@ -145,10 +143,6 @@ void VibratoTransferAudioProcessor::releaseResources()
 #ifndef JucePlugin_PreferredChannelConfigurations
 bool VibratoTransferAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
-  #if JucePlugin_IsMidiEffect
-    juce::ignoreUnused (layouts);
-    return true;
-  #else
     // This is the place where you check if the layout is supported.
     // In this template code we only support mono or stereo.
     // Some plugin hosts, such as certain GarageBand versions, will only
@@ -158,13 +152,11 @@ bool VibratoTransferAudioProcessor::isBusesLayoutSupported (const BusesLayout& l
         return false;
 
     // This checks if the input layout matches the output layout
-   #if ! JucePlugin_IsSynth
     if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
         return false;
-   #endif
 
+    // sidechain can be mono or stereo, so don't check?
     return true;
-  #endif
 }
 #endif
 
@@ -186,92 +178,97 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
     
-    int totalChans = totalNumInputChannels > 0 ? 1 : 0; // TODO: get main and side-chain channels
+    juce::AudioSampleBuffer mainInputOutput = getBusBuffer(buffer, true, 0);
+    juce::AudioSampleBuffer sideChainInput  = getBusBuffer(buffer, true, 1);
+    
     bool performTransfer = blocks_processed >= onset_time_blocks;
-#if 1 // block processing
+    int sc_channels = sideChainInput.getNumChannels();
+    float sc_norm = 1.f / sc_channels;
+    auto* sc_buffers = sideChainInput.getArrayOfWritePointers();
+#if 0 // block processing
     // analysis loop - side chain (right channel for testing)
-    for (int channel = 1; channel < 2; ++channel)
-    {
-        auto* channelData = buffer.getWritePointer (channel);
-        for (int i = 0; i < blockSize; ++i) {
-            // STEP 1: buffer f0 signal (eventually from the sidechain)
-            sc_buffer[sc_pointer] = channelData[i];
-            ac_buffer[sc_pointer] = channelData[i];
-            sc_pointer = (sc_pointer + 1) & Nfft_mask;
-            ++n_buffered;
+
+    // STEP 1: buffer sidechain signal
+    for (int i = 0; i < blockSize; ++i) {
+        // sum to mono, normalize
+        for (int channel = 0; channel < sc_channels; ++channel) {
+            float samp = sc_norm * sc_buffers[channel][i];
+            sc_buffer[sc_pointer] += samp;
+            ac_buffer[sc_pointer] += samp;
+        }
+        bp_buf[i] = sc_buffer[sc_pointer]; // store in bandpass buffer
+        sc_pointer = (sc_pointer + 1) & Nfft_mask;
+        ++n_buffered;
+        
+        // STEP 2: if we have buffered enough, do f0 analysis
+        // TODO: is there any way to flag this outside of the for-loop?
+        if (n_buffered == V_H_NFFT) {
+            n_buffered = 0; // reset
+            float f0 = 0.f;
             
-            // STEP 2: if we have buffered enough, do f0 analysis
-            // TODO: is there any way to flag this outside of the for-loop?
-            if (n_buffered == V_H_NFFT) {
-                n_buffered = 0; // reset
-                float f0 = 0.f;
-                
-                // if analysis signal is too quiet, don't even bother
-                if (bufferTooQuiet(ac_buffer, V_H_NFFT)) {
-                    if (bp_initialized) {
-                        bp_initialized = false;
-                    }
-                    process_delay = false;
-                    last_f0s[last_f0s_pointer] = f0;
-                    last_f0s_pointer = (last_f0s_pointer+1) & last_f0s_mask;
-                    previous_f0_sum = 0;
-                    previous_f0_count = 0;
-                    for (Biquad quad : f0_bandpass) {
-                        quad.clear();
-                    }
-                    for (Biquad quad : envelopeBP) {
-                        quad.clear();
-                    }
-                    for (Biquad quad : dt_highpass) {
-                        quad.clear();
-                    }
-                    hilbert_left[0].clear(); hilbert_left[1].clear(); hilbert_left[2].clear(); hilbert_left[3].clear();
-                    hilbert_right[0].clear(); hilbert_right[1].clear(); hilbert_right[2].clear(); hilbert_right[3].clear();
-                    blocks_processed = 0;
-                // do autocorrelation and SNAC
-                } else {
-                    mayer_realfft(V_NFFT,ac_buffer); // FFT
-                    ac_buffer[0] *= ac_buffer[0]; // process DC
-                    ac_buffer[V_H_NFFT] *= ac_buffer[V_H_NFFT]; // process Nyquist
-                    // process positive frequencies
-                    for (int k = 1; k < V_H_NFFT; ++k) {
-                        ac_buffer[k] = (ac_buffer[k] * ac_buffer[k] + ac_buffer[V_NFFT-k] * ac_buffer[V_NFFT-k]); // real
-                        ac_buffer[V_NFFT-k] = 0.0; // imaginary
-                    }
-                    mayer_realifft(V_NFFT, ac_buffer); // IFFT
-                    
-                    // peak finding
-                    f0 = find_f0_SNAC();
-                    last_f0s[last_f0s_pointer] = f0;
-                    last_f0s_pointer = (last_f0s_pointer + 1) & last_f0s_mask;
-                    // if f0 is stable, process bp if necessary and set delay processing to true
-                    if (f0Stable()) {
-                        // TODO: it seems for some signals this is too narrow!
-                        if (!bp_initialized) {initialize_bp(0.90*f0, 1.10*f0);}
-                        if (previous_f0_count < averaging_frames) {
-                            previous_f0_sum += f0;
-                            previous_f0_count += 1;
-                        }
-                        process_delay = true;
-                    }
+            // if analysis signal is too quiet, don't even bother
+            if (bufferTooQuiet(ac_buffer, V_H_NFFT)) {
+                if (bp_initialized) {
+                    bp_initialized = false;
                 }
-                // now reset the buffer
-                memset(ac_buffer, 0, V_NFFT * sizeof(float));
-                // TODO: reset f0 buffer? if the logic all holds then we shouldn't ever need to reset it
+                process_delay = false;
+                last_f0s[last_f0s_pointer] = f0;
+                last_f0s_pointer = (last_f0s_pointer+1) & last_f0s_mask;
+                previous_f0_sum = 0;
+                previous_f0_count = 0;
+                for (Biquad quad : f0_bandpass) {
+                    quad.clear();
+                }
+                for (Biquad quad : envelopeBP) {
+                    quad.clear();
+                }
+                for (Biquad quad : dt_highpass) {
+                    quad.clear();
+                }
+                hilbert_left[0].clear(); hilbert_left[1].clear(); hilbert_left[2].clear(); hilbert_left[3].clear();
+                hilbert_right[0].clear(); hilbert_right[1].clear(); hilbert_right[2].clear(); hilbert_right[3].clear();
+                blocks_processed = 0;
+            // do autocorrelation and SNAC
+            } else {
+                mayer_realfft(V_NFFT,ac_buffer); // FFT
+                ac_buffer[0] *= ac_buffer[0]; // process DC
+                ac_buffer[V_H_NFFT] *= ac_buffer[V_H_NFFT]; // process Nyquist
+                // process positive frequencies
+                for (int k = 1; k < V_H_NFFT; ++k) {
+                    ac_buffer[k] = (ac_buffer[k] * ac_buffer[k] + ac_buffer[V_NFFT-k] * ac_buffer[V_NFFT-k]); // real
+                    ac_buffer[V_NFFT-k] = 0.0; // imaginary
+                }
+                mayer_realifft(V_NFFT, ac_buffer); // IFFT
+                
+                // peak finding
+                f0 = find_f0_SNAC();
+                last_f0s[last_f0s_pointer] = f0;
+                last_f0s_pointer = (last_f0s_pointer + 1) & last_f0s_mask;
+                // if f0 is stable, process bp if necessary and set delay processing to true
+                if (f0Stable()) {
+                    // TODO: it seems for some signals this is too narrow!
+                    if (!bp_initialized) {initialize_bp(0.90*f0, 1.10*f0);}
+                    if (previous_f0_count < averaging_frames) {
+                        previous_f0_sum += f0;
+                        previous_f0_count += 1;
+                    }
+                    process_delay = true;
+                }
             }
+            // now reset the buffers
+            memset(ac_buffer, 0, V_NFFT * sizeof(float));
+            memset(sc_buffer, 0, V_H_NFFT * sizeof(float));
         }
     }
-    
     // processing loop - main input (left channel for testing)
-    auto* inputData = buffer.getWritePointer (0);
-    auto* scData = buffer.getWritePointer(1);
+    auto* inputData = mainInputOutput.getArrayOfWritePointers();
     
-    process_delay = process_delay && !bufferTooQuiet(scData, blockSize);
+    process_delay = process_delay && !bufferTooQuiet(bp_buf, blockSize);
     // putting the if statement outside of the processing loop
     if (process_delay) {
         // STEP 1: f0 bandpass filter and perform the hilbert transform
         // filters initialized with Butterworth cascade in reverse order
-        f0_bandpass[1].processBlock(scData, bp_buf, blockSize);
+        f0_bandpass[1].processBlockInPlace(bp_buf, blockSize); // contains sidechain at first
         f0_bandpass[0].processBlockInPlace(bp_buf, blockSize);
         hilbert_left[0].processBlock(bp_buf, hilbert_left_buf, blockSize);
         hilbert_left[1].processBlockInPlace(hilbert_left_buf, blockSize);
@@ -312,7 +309,8 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         // STEP 3: perform transfer
         for (int i = 0; i < blockSize; ++i) {
             // buffer input
-            del_buffer[write_pointer] = inputData[i];
+            del_buffer_l[write_pointer] = inputData[0][i];
+            del_buffer_r[write_pointer] = inputData[1][i];
             write_pointer = (write_pointer + 1) & del_length_mask;
             
             // TODO: add a clip around last_env
@@ -320,8 +318,10 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                         (i == 0 ? AMP_CNST + amp_scaler*last_env : AMP_CNST + amp_scaler*env_buf[i-1]) :
                         AMP_CNST;
             // output from buffer
-            inputData[i] = make_up_gain * env * fractional_delay_read(read_pointer);
-            //inputData[i] = make_up_gain * fractional_delay_read(read_pointer);
+            float left,right;
+            fractional_delay_read(read_pointer, left, right);
+            inputData[0][i] = make_up_gain * env * left;
+            inputData[1][i] = make_up_gain * env * right;
 
             read_pointer = performTransfer ? (read_pointer + 1) - dt_scaler*dt_buf[i] : (read_pointer + 1);
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
@@ -351,10 +351,14 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         
         for (int i = 0; i < blockSize; ++i) {
             // buffer the input
-            del_buffer[write_pointer] = inputData[i];
+            del_buffer_l[write_pointer] = inputData[0][i];
+            del_buffer_r[write_pointer] = inputData[1][i];
             write_pointer = (write_pointer + 1) & del_length_mask;
             // output from the buffer while catching up dt and envelope if necessary
-            inputData[i] = make_up_gain * last_env * fractional_delay_read(read_pointer);
+            float left,right;
+            fractional_delay_read(read_pointer, left, right);
+            inputData[0][i] = make_up_gain * last_env * left;
+            inputData[1][i] = make_up_gain * last_env * right;
             // read pointer can still be fractional
             read_pointer = read_pointer + 1 - dt;
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
@@ -367,97 +371,99 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         }
     }
 #else // sample-by-sample processing
-// analysis loop - side chain (right channel for testing)
-    for (int channel = 1; channel < 2; ++channel)
-    {
-        auto* channelData = buffer.getWritePointer (channel);
-        for (int i = 0; i < blockSize; ++i) {
-            // STEP 1: buffer f0 signal (eventually from the sidechain)
-            sc_buffer[sc_pointer] = channelData[i];
-            ac_buffer[sc_pointer] = channelData[i];
-            sc_pointer = (sc_pointer + 1) & Nfft_mask;
-            ++n_buffered;
+    // analysis loop - side chain (right channel for testing)
+    for (int i = 0; i < blockSize; ++i) {
+        // sum to mono, normalize
+        for (int channel = 0; channel < sc_channels; ++channel) {
+            float samp = sc_norm * sc_buffers[channel][i];
+            sc_buffer[sc_pointer] += samp;
+            ac_buffer[sc_pointer] += samp;
+        }
+        bp_buf[i] = sc_buffer[sc_pointer]; // store in bandpass buffer
+        sc_pointer = (sc_pointer + 1) & Nfft_mask;
+        ++n_buffered;
             
-            // STEP 2: if we have buffered enough, do f0 analysis
-            // TODO: is there any way to flag this outside of the for-loop?
-            if (n_buffered == V_H_NFFT) {
-                n_buffered = 0; // reset
-                float f0 = 0.f;
-                
-                // if analysis signal is too quiet, don't even bother
-                if (bufferTooQuiet(ac_buffer, V_H_NFFT)) {
-                    if (bp_initialized) {
-                        bp_initialized = false;
-                    }
-                    process_delay = false;
-                    last_f0s[last_f0s_pointer] = f0;
-                    last_f0s_pointer = (last_f0s_pointer+1) & last_f0s_mask;
-                    previous_f0_sum = 0;
-                    previous_f0_count = 0;
-                    for (Biquad quad : f0_bandpass) {
-                        quad.clear();
-                    }
-                    for (Biquad quad : dt_highpass) {
-                        quad.clear();
-                    }
-                    envelopeBP[0].clear(); envelopeBP[1].clear();
-                    hilbert_left[0].clear(); hilbert_left[1].clear(); hilbert_left[2].clear(); hilbert_left[3].clear();
-                    hilbert_right[0].clear(); hilbert_right[1].clear(); hilbert_right[2].clear(); hilbert_right[3].clear();
-                    blocks_processed = 0;
-                // do autocorrelation and SNAC
-                } else {
-                    mayer_realfft(V_NFFT,ac_buffer); // FFT
-                    ac_buffer[0] *= ac_buffer[0]; // process DC
-                    ac_buffer[V_H_NFFT] *= ac_buffer[V_H_NFFT]; // process Nyquist
-                    // process positive frequencies
-                    for (int k = 1; k < V_H_NFFT; ++k) {
-                        ac_buffer[k] = (ac_buffer[k] * ac_buffer[k] + ac_buffer[V_NFFT-k] * ac_buffer[V_NFFT-k]); // real
-                        ac_buffer[V_NFFT-k] = 0.0; // imaginary
-                    }
-                    mayer_realifft(V_NFFT, ac_buffer); // IFFT
-                    
-                    // peak finding
-                    f0 = find_f0_SNAC();
-                    last_f0s[last_f0s_pointer] = f0;
-                    last_f0s_pointer = (last_f0s_pointer + 1) & last_f0s_mask;
-                    // if f0 is stable, process bp if necessary and set delay processing to true
-                    if (f0Stable()) {
-                        // TODO: it seems for some signals this is too narrow!
-                        if (!bp_initialized) {initialize_bp(0.90*f0, 1.10*f0);}
-                        if (previous_f0_count < averaging_frames) {
-                            previous_f0_sum += f0;
-                            previous_f0_count += 1;
-                        }
-                        process_delay = true;
-                    }
+        // STEP 2: if we have buffered enough, do f0 analysis
+        // TODO: is there any way to flag this outside of the for-loop?
+        if (n_buffered == V_H_NFFT) {
+            n_buffered = 0; // reset
+            float f0 = 0.f;
+            
+            // if analysis signal is too quiet, don't even bother
+            if (bufferTooQuiet(ac_buffer, V_H_NFFT)) {
+                if (bp_initialized) {
+                    bp_initialized = false;
                 }
-                // now reset the buffer
-                memset(ac_buffer, 0, V_NFFT * sizeof(float));
-                // TODO: reset f0 buffer? if the logic all holds then we shouldn't ever need to reset it
+                process_delay = false;
+                last_f0s[last_f0s_pointer] = f0;
+                last_f0s_pointer = (last_f0s_pointer+1) & last_f0s_mask;
+                previous_f0_sum = 0;
+                previous_f0_count = 0;
+                for (Biquad quad : f0_bandpass) {
+                    quad.clear();
+                }
+                for (Biquad quad : dt_highpass) {
+                    quad.clear();
+                }
+                envelopeBP[0].clear(); envelopeBP[1].clear();
+                hilbert_left[0].clear(); hilbert_left[1].clear(); hilbert_left[2].clear(); hilbert_left[3].clear();
+                hilbert_right[0].clear(); hilbert_right[1].clear(); hilbert_right[2].clear(); hilbert_right[3].clear();
+                blocks_processed = 0;
+            // do autocorrelation and SNAC
+            } else {
+                mayer_realfft(V_NFFT,ac_buffer); // FFT
+                ac_buffer[0] *= ac_buffer[0]; // process DC
+                ac_buffer[V_H_NFFT] *= ac_buffer[V_H_NFFT]; // process Nyquist
+                // process positive frequencies
+                for (int k = 1; k < V_H_NFFT; ++k) {
+                    ac_buffer[k] = (ac_buffer[k] * ac_buffer[k] + ac_buffer[V_NFFT-k] * ac_buffer[V_NFFT-k]); // real
+                    ac_buffer[V_NFFT-k] = 0.0; // imaginary
+                }
+                mayer_realifft(V_NFFT, ac_buffer); // IFFT
+                
+                // peak finding
+                f0 = find_f0_SNAC();
+                last_f0s[last_f0s_pointer] = f0;
+                last_f0s_pointer = (last_f0s_pointer + 1) & last_f0s_mask;
+                // if f0 is stable, process bp if necessary and set delay processing to true
+                if (f0Stable()) {
+                    // TODO: it seems for some signals this is too narrow!
+                    if (!bp_initialized) {initialize_bp(0.90*f0, 1.10*f0);}
+                    if (previous_f0_count < averaging_frames) {
+                        previous_f0_sum += f0;
+                        previous_f0_count += 1;
+                    }
+                    process_delay = true;
+                }
             }
+            // now reset the buffer
+            memset(ac_buffer, 0, V_NFFT * sizeof(float));
+            memset(sc_buffer, 0, V_H_NFFT * sizeof(float));
         }
     }
     
     // processing loop - main input (left channel for testing)
-    auto* inputData = buffer.getWritePointer (0);
-    auto* scData = buffer.getWritePointer(1);
+    auto* inputData = mainInputOutput.getArrayOfWritePointers();
     
-    process_delay = process_delay && !bufferTooQuiet(scData, blockSize);
+    process_delay = process_delay && !bufferTooQuiet(bp_buf, blockSize);
     // putting the if statement outside of the processing loop
     if (process_delay) {
         float w0 = T * twopi * (previous_f0_sum / previous_f0_count);
         for (int i = 0; i < blockSize; ++i) {
             // STEP 1: buffer the input
-            del_buffer[write_pointer] = inputData[i];
+            del_buffer_l[write_pointer] = inputData[0][i];
+            del_buffer_r[write_pointer] = inputData[1][i];
             write_pointer = (write_pointer + 1) & del_length_mask;
             
             // STEP 2: read from the delay line
-            // read (right now do nothing...there should be a 512 sample delay)
-            inputData[i] = make_up_gain * last_env * fractional_delay_read(read_pointer);
+            float left,right;
+            fractional_delay_read(read_pointer, left, right);
+            inputData[0][i] = make_up_gain * last_env * left;
+            inputData[1][i] = make_up_gain * last_env * right;
             
             // STEP 3: calculate the next delay based on the output of the bandpass filter and f0 analysis
             // filters initialized with Butterworth cascade in reverse order
-            float bp_sample = f0_bandpass[0].processSample(f0_bandpass[1].processSample(scData[i]));
+            float bp_sample = f0_bandpass[0].processSample(f0_bandpass[1].processSample(bp_buf[i]));
             float hb_left = hilbert_left[3].processSample(hilbert_left[2].processSample(hilbert_left[1].processSample(hilbert_left[0].processSample(bp_sample))));
             float hb_right = hilbert_right[3].processSample(hilbert_right[2].processSample(hilbert_right[1].processSample(hilbert_right[0].processSample(bp_sample))));
             float curr_phase = atan2f(last_right_out, hb_left);
@@ -503,10 +509,14 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         
         for (int i = 0; i < blockSize; ++i) {
             // STEP 1: buffer the input
-            del_buffer[write_pointer] = inputData[i];
+            del_buffer_l[write_pointer] = inputData[0][i];
+            del_buffer_r[write_pointer] = inputData[1][i];
             write_pointer = (write_pointer + 1) & del_length_mask;
             // STEP 2: output from the buffer while catching up dt and envelope if necessary
-            inputData[i] = make_up_gain * last_env * fractional_delay_read(read_pointer);
+            float left,right;
+            fractional_delay_read(read_pointer, left, right);
+            inputData[0][i] = make_up_gain * last_env * left;
+            inputData[1][i] = make_up_gain * last_env * right;
             // read pointer can still be fractional
             read_pointer = read_pointer + 1 - dt;
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
@@ -554,13 +564,15 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
     return new VibratoTransferAudioProcessor();
 }
 
-float VibratoTransferAudioProcessor::fractional_delay_read(float index) {
+// output values get put into left and right
+void VibratoTransferAudioProcessor::fractional_delay_read(float index, float& left, float& right) {
     // TODO: should we ever check that index is in range, or should that be done
     // TODO: outside of the function?
     int low = int(index);
     int high = low == del_length - 1 ? 0 : low+1;
     float high_frac = index - low;
-    return (1-high_frac) * del_buffer[low] + high_frac * del_buffer[high];
+    left = (1-high_frac) * del_buffer_l[low] + high_frac * del_buffer_l[high];
+    right = (1-high_frac) * del_buffer_r[low] + high_frac * del_buffer_r[high];
 }
 
 float VibratoTransferAudioProcessor::find_f0_SNAC() {
