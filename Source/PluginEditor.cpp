@@ -21,33 +21,30 @@ VibratoTransferAudioProcessorEditor::VibratoTransferAudioProcessorEditor (Vibrat
     
     // these define the parameters of our slider object
     ampSlider.setSliderStyle (juce::Slider::LinearBarVertical);
-    ampSlider.setRange (0.0, 10.0, 0.1);
     ampSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 90, 0);
     ampSlider.setPopupDisplayEnabled (true, false, this);
     ampSlider.setTextValueSuffix ("AMTransferScaler");
     ampSlider.setValue(1.0);
  
     dtSlider.setSliderStyle (juce::Slider::LinearBarVertical);
-    dtSlider.setRange (0.0, 2.0, 0.1);
     dtSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 90, 0);
     dtSlider.setPopupDisplayEnabled (true, false, this);
     dtSlider.setTextValueSuffix ("FMTransferScaler");
     dtSlider.setValue(1.0);
     
     mugSlider.setSliderStyle (juce::Slider::LinearBarVertical);
-    mugSlider.setRange (-6, 6, 0.1);
     mugSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 90, 0);
     mugSlider.setPopupDisplayEnabled (true, false, this);
     mugSlider.setTextValueSuffix ("MakeUpGainScaler");
     mugSlider.setValue(0.0);
+    
+    fmScalerAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.getVTS(), "fmScaler", dtSlider);
+    amScalerAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.getVTS(), "amScaler", ampSlider);
+    makeUpGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.getVTS(), "makeUpGain", mugSlider);
  
     addAndMakeVisible (&ampSlider);
     addAndMakeVisible (&dtSlider);
     addAndMakeVisible (&mugSlider);
-    
-    ampSlider.addListener (this);
-    dtSlider.addListener (this);
-    mugSlider.addListener (this);
     
     addAndMakeVisible(audioProcessor.getDelayVisualizer());
     addAndMakeVisible(audioProcessor.getAmpVisualizer());
@@ -79,9 +76,5 @@ void VibratoTransferAudioProcessorEditor::resized()
     audioProcessor.getAmpVisualizer().setBounds(150, getHeight()/2, getWidth() - 170, getHeight()/2 - 30);
 }
 
-void VibratoTransferAudioProcessorEditor::sliderValueChanged (juce::Slider* slider)
-{
-    audioProcessor.amp_scaler = ampSlider.getValue();
-    audioProcessor.dt_scaler = dtSlider.getValue();
-    audioProcessor.make_up_gain = powf(10.f, mugSlider.getValue()/20.f);
-}
+// keeping this code around to reference later, delete after it has been put in the right spot
+// audioProcessor.make_up_gain = powf(10.f, mugSlider.getValue()/20.f);

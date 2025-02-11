@@ -26,7 +26,8 @@
 //==============================================================================
 /**
 */
-class VibratoTransferAudioProcessor  : public juce::AudioProcessor
+class VibratoTransferAudioProcessor  : public juce::AudioProcessor,
+                                       public juce::ValueTree::Listener
                             #if JucePlugin_Enable_ARA
                              , public juce::AudioProcessorARAExtension
                             #endif
@@ -71,11 +72,9 @@ public:
     
     VibVisualizer& getDelayVisualizer();
     VibVisualizer& getAmpVisualizer();
+    
+    juce::AudioProcessorValueTreeState& getVTS() { return parameters; }
 
-    // these should probably be set using public methods instead of being public values
-    float dt_scaler = 1.f;
-    float amp_scaler = 1.f;
-    float make_up_gain = 1.f;
 private:
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VibratoTransferAudioProcessor)
@@ -174,4 +173,16 @@ private:
     VibVisualizer amp_vis;
     juce::AudioBuffer<float> dt_buffer;
     juce::AudioBuffer<float> amp_buffer;
+    
+    // parameters
+    void valueTreePropertyChanged (juce::ValueTree &treeWhosePropertyHasChanged, const juce::Identifier &property) override;
+    juce::AudioProcessorValueTreeState parameters;
+    std::atomic<float>* fmScaler;
+    std::atomic<float>* amScaler;
+    std::atomic<float>* makeUpGain;
+    // these are the actual float values
+    float dt_scaler = 1.f;
+    float amp_scaler = 1.f;
+    float make_up_gain = 1.f;
+    std::atomic<bool> updateParams { false };
 };
