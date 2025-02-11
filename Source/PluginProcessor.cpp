@@ -185,7 +185,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     int sc_channels = sideChainInput.getNumChannels();
     float sc_norm = 1.f / sc_channels;
     auto* sc_buffers = sideChainInput.getArrayOfWritePointers();
-#if 0 // block processing
+#if 1 // block processing
     // analysis loop - side chain (right channel for testing)
 
     // STEP 1: buffer sidechain signal
