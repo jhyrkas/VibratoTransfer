@@ -15,7 +15,7 @@
 //==============================================================================
 /**
 */
-class VibratoTransferAudioProcessorEditor  : public juce::AudioProcessorEditor, private juce::Slider::Listener
+class VibratoTransferAudioProcessorEditor  : public juce::AudioProcessorEditor
 {
 public:
     VibratoTransferAudioProcessorEditor (VibratoTransferAudioProcessor&);
@@ -33,6 +33,8 @@ private:
     juce::Slider dtSlider;
     juce::Slider mugSlider; // make up gain
     
-    void sliderValueChanged (juce::Slider* slider) override; // for Slider::Listener
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> fmScalerAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> amScalerAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> makeUpGainAttachment;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VibratoTransferAudioProcessorEditor)
 };

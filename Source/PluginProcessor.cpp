@@ -23,9 +23,17 @@ b_designer(),
 del_vis(),
 amp_vis(),
 dt_buffer(1, MAX_BUF),
-amp_buffer(1, MAX_BUF)
-//envelopeBP() // ButterBP
-//envelopeBP(0, 0, 0, 0, 0) // Biquad
+amp_buffer(1, MAX_BUF),
+parameters(*this, nullptr, juce::Identifier("VibratoTransfer"),
+           {
+            std::make_unique<juce::AudioParameterFloat>
+            (juce::ParameterID { "fmScaler",  1 }, "FM Scaler", 0.0f, 2.0f, 1.f),
+            std::make_unique<juce::AudioParameterFloat>
+            (juce::ParameterID { "amScaler",  1 }, "AM Scaler", 0.0f, 10.0f, 1.f),
+            std::make_unique<juce::AudioParameterFloat>
+            (juce::ParameterID { "makeUpGain",  1 }, "Make-up Gain", -6.f, 6.f, 0.f)
+            }
+)
 {
     // zero out delay buffer
     memset(del_buffer_l, 0, del_length * sizeof(float));
@@ -34,6 +42,19 @@ amp_buffer(1, MAX_BUF)
     memset(ac_buffer, 0, V_NFFT*sizeof(float));
     memset(dt_buf, 0, MAX_BUF*sizeof(float));
     memset(env_buf, 0, MAX_BUF*sizeof(float));
+    
+    fmScaler = parameters.getRawParameterValue("fmScaler");
+    amScaler = parameters.getRawParameterValue("amScaler");
+    makeUpGain = parameters.getRawParameterValue("makeUpGain");
+    parameters.state.addListener(this);
+    
+    // old code, different parameter setup
+    // TODO: look into this normalize range business
+    // https://docs.juce.com/master/tutorial_audio_parameter.html
+    //addParameter (fmScaler = new juce::AudioParameterFloat ({ "fmScaler", 1 }, "FM Scaler", 0.0f, 2.0f, 1.f));
+    //addParameter (amScaler = new juce::AudioParameterFloat ({ "amScaler", 1 }, "AM Scaler", 0.0f, 10.0f, 1.f));
+    //addParameter (makeUpGain = new juce::AudioParameterFloat ({ "makeUpGain", 1 }, "Make-up Gain", -6.f, 6.f, 0.f));
+    
 }
 
 VibratoTransferAudioProcessor::~VibratoTransferAudioProcessor()
@@ -48,29 +69,17 @@ const juce::String VibratoTransferAudioProcessor::getName() const
 
 bool VibratoTransferAudioProcessor::acceptsMidi() const
 {
-   #if JucePlugin_WantsMidiInput
-    return true;
-   #else
     return false;
-   #endif
 }
 
 bool VibratoTransferAudioProcessor::producesMidi() const
 {
-   #if JucePlugin_ProducesMidiOutput
-    return true;
-   #else
     return false;
-   #endif
 }
 
 bool VibratoTransferAudioProcessor::isMidiEffect() const
 {
-   #if JucePlugin_IsMidiEffect
-    return true;
-   #else
     return false;
-   #endif
 }
 
 double VibratoTransferAudioProcessor::getTailLengthSeconds() const
@@ -160,15 +169,20 @@ bool VibratoTransferAudioProcessor::isBusesLayoutSupported (const BusesLayout& l
 }
 #endif
 
-// TODO: right now we're just assuming everything is mono but the logic should
-// TODO: be redone a bit if we handle stereo or beyond.
-// TODO: also, one of these channels should be the sidechain?
 void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
-
+    
+    // parameter updates
+    if (updateParams) {
+        dt_scaler = fmScaler->load();
+        amp_scaler = amScaler->load();
+        make_up_gain = powf(10.f, makeUpGain->load()/20.f);
+        updateParams = false;
+    }
+    
     // In case we have more outputs than inputs, this code clears any output
     // channels that didn't contain input data, (because these aren't
     // guaranteed to be empty - they may contain garbage).
@@ -344,7 +358,6 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         // try to catch up, but not too fast
         float dt = fmin(fabsf(dt_diff/blockSize), 0.002);
         dt = dt_diff > 0 ? dt : -dt;
-        // TODO: right here, keep track of last envelope, start ramping back to 1
         float e_diff = AMP_CNST - last_env;
         float env_incr = fmin(fabsf(e_diff/blockSize),0.001);
         env_incr = e_diff < 0 ? -env_incr : env_incr;
@@ -502,7 +515,6 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         float dt = fmin(fabsf(dt_diff/blockSize), 0.002);
         dt = dt_diff > 0 ? dt : -dt;
         
-        // TODO: right here, keep track of last envelope, start ramping back to 1
         float e_diff = AMP_CNST - last_env;
         float env_incr = fmin(fabsf(e_diff/blockSize),0.001);
         env_incr = e_diff < 0 ? -env_incr : env_incr;
@@ -654,17 +666,6 @@ VibVisualizer& VibratoTransferAudioProcessor::getAmpVisualizer() {
     return amp_vis;
 }
 
-/*
-// OLD CODE: peaking biquad
-void VibratoTransferAudioProcessor::initialize_env_bp() {
-    float f0 = 5.f;
-    float bw = 4.f;
-    float w0 = (twopi * f0) / fs;
-    float bwr = (twopi * bw) / fs;
-    float gain = 1.f / sqrt(2); // don't really need to compute every time
-    float beta = (sqrt(1.f - (gain*gain))/gain) * tanf(bwr*0.5f);
-    float norm_gain = 1.f/(1+beta);
-    float ng_cos_w0_neg2 = -2.f*norm_gain*cosf(w0);
-    envelopeBP.setParams(1.f-norm_gain, 0.f, norm_gain-1.f, ng_cos_w0_neg2, 2.f*norm_gain-1.f);
+void VibratoTransferAudioProcessor::valueTreePropertyChanged(juce::ValueTree &treeWhosePropertyHasChanged, const juce::Identifier &property) {
+    updateParams = true;
 }
-*/
