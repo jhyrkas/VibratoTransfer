@@ -31,7 +31,7 @@ parameters(*this, nullptr, juce::Identifier("VibratoTransfer"),
             std::make_unique<juce::AudioParameterFloat>
             (juce::ParameterID { "amScaler",  1 }, "AM Scaler", 0.0f, 10.0f, 1.f),
             std::make_unique<juce::AudioParameterFloat>
-            (juce::ParameterID { "makeUpGain",  1 }, "FM Make-up Gain", -6.f, 6.f, 0.f)
+            (juce::ParameterID { "makeUpGain",  1 }, "Make-up Gain", -6.f, 6.f, 0.f)
             }
 )
 {
@@ -199,7 +199,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     int sc_channels = sideChainInput.getNumChannels();
     float sc_norm = 1.f / sc_channels;
     auto* sc_buffers = sideChainInput.getArrayOfWritePointers();
-#if 0 // block processing
+#if 1 // block processing
     // analysis loop - side chain (right channel for testing)
 
     // STEP 1: buffer sidechain signal
