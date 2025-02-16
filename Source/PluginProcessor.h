@@ -22,6 +22,7 @@
 #define MAX_BUF 2048
 #define DEL_LAG 512
 #define AMP_CNST 0.708 // -3 dB
+#define NUM_F0 8
 
 //==============================================================================
 /**
@@ -108,8 +109,8 @@ private:
     bool f0_stabilized = false;
     bool filter_initialized = false;
     
-    float last_f0s[8] = {0.f, 0.f, 0.f, 0.f,0.f, 0.f, 0.f, 0.f}; // starting with 8, totally arbitrary
-    int last_f0s_mask = 7;
+    float last_f0s[NUM_F0] = {0.f, 0.f, 0.f, 0.f,0.f, 0.f, 0.f, 0.f}; // starting with 8, totally arbitrary
+    int last_f0s_mask = NUM_F0-1;
     int last_f0s_pointer = 0;
     
     // hilbert business
@@ -185,4 +186,6 @@ private:
     float amp_scaler = 1.f;
     float make_up_gain = 1.f;
     std::atomic<bool> updateParams { false };
+    
+    void resetProcessing();
 };
