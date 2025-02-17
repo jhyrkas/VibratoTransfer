@@ -10,6 +10,7 @@
 
 #include <math.h>
 #include <numbers>
+#include <deque>
 #include <vector>
 #include <JuceHeader.h>
 #include "Biquad.hpp"
@@ -93,8 +94,8 @@ private:
     float del_buffer_r[V_NFFT]; // this buffers the right input channel
     int write_pointer = DEL_LAG; // initial delay offset
     float read_pointer = 0;
-    std::vector<Biquad> dt_highpass;
-    void initialize_dt_hp();
+    std::vector<Biquad> dt_bandpass;
+    void initialize_dt_bp();
     
     // f0 analysis business
     // 2*NFFT because we store the FFT result in place
@@ -143,10 +144,11 @@ private:
     int averaging_frames; // set in prepareToPlay using fs
     float previous_f0_sum = 0;
     int previous_f0_count = 0; // using these two to calculate previous f0 mean
+    std::deque<float> f0_queue;
     float dt_buf[MAX_BUF];
     
     // cumsum of RFS (this is effectively the last offset of the delay function)
-    //float Dt = 0;
+    float Dt = 0;
     
     // envelope business
     std::vector<Biquad> envelopeBP;

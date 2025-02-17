@@ -133,7 +133,7 @@ void VibratoTransferAudioProcessor::prepareToPlay (double sampleRate, int sample
     bp_initialized = false;
     //envelopeBP.setParams(1.f, 10.f, fs); // 1 Hz thru 10 Hz, this does a buffer clear
     initialize_env_bp(); // this does a buffer clear
-    initialize_dt_hp();
+    initialize_dt_bp();
     
     del_vis.clear();
     del_vis.setSamplesPerBlock(samplesPerBlock);
@@ -244,10 +244,19 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                 if (f0Stable()) {
                     // TODO: it seems for some signals this is too narrow!
                     if (!bp_initialized) {initialize_bp(0.90*f0, 1.10*f0);}
+                    /*
                     if (previous_f0_count < averaging_frames) {
                         previous_f0_sum += f0;
                         previous_f0_count += 1;
-                    }
+                        f0_queue.push_back(f0);
+                    } else {
+                        float last_f0 = f0_queue.front();
+                        previous_f0_sum = previous_f0_sum + f0 - last_f0;
+                        f0_queue.pop_front();
+                        f0_queue.push_back(f0);
+                    }*/
+                    previous_f0_sum += f0;
+                    previous_f0_count += 1;
                     process_delay = true;
                 } else {
                     if (bp_initialized) {
@@ -305,7 +314,8 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         last_right_out = hilbert_right_buf[blockSize-1];
         envelopeBP[1].processBlockInPlace(env_buf, blockSize);
         envelopeBP[0].processBlockInPlace(env_buf, blockSize);
-        dt_highpass[0].processBlockInPlace(dt_buf, blockSize);
+        dt_bandpass[1].processBlockInPlace(dt_buf, blockSize);
+        dt_bandpass[0].processBlockInPlace(dt_buf, blockSize);
         
         // STEP 3: perform transfer
         for (int i = 0; i < blockSize; ++i) {
@@ -325,16 +335,17 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             inputData[1][i] = make_up_gain * env * right;
 
             read_pointer = performTransfer ? (read_pointer + 1) - dt_scaler*dt_buf[i] : (read_pointer + 1);
-            //read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
+            read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
             // slow but double checking
-            read_pointer = fmod(read_pointer, del_length);
+            //read_pointer = fmod(read_pointer, del_length);
+            Dt += performTransfer ? dt_buf[i] : 0;
             
             // read pointer too close to write pointer
             if (read_pointer - write_pointer <= 1.f && read_pointer - write_pointer >= 0.f) {
                 if (dt_buf[i] > 0) {
-                    bool tmp = true; // no-op: delay exceeded delay length
+                    float tmp = Dt; // no-op: delay exceeded delay length
                 } else {
-                    bool tmp = false; // no-op: delay caught up to write head
+                    float tmp = Dt; // no-op: delay caught up to write head
                 }
             }
             
@@ -357,7 +368,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         float dt = fmin(fabsf(dt_diff/blockSize), 0.002);
         dt = dt_diff > 0 ? dt : -dt;
         float e_diff = AMP_CNST - last_env;
-        float env_incr = fmin(fabsf(e_diff/blockSize),0.001);
+        float env_incr = fmin(fabsf(e_diff/blockSize),0.001); // PROBLEM: this takes forever
         env_incr = e_diff < 0 ? -env_incr : env_incr;
         
         for (int i = 0; i < blockSize; ++i) {
@@ -373,6 +384,11 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             // read pointer can still be fractional
             read_pointer = read_pointer + 1 - dt;
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
+            
+            Dt += dt;
+            
+            float p_diff = write_pointer - read_pointer;
+            p_diff = ((int)p_diff & del_length_mask) + (p_diff - (int)p_diff);
             
             // visualize dt
             dt_buffer.setSample(0, i, dt);
@@ -408,7 +424,9 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             while (inst_freq < 0) {inst_freq += twopi;}
             while (inst_freq > twopi) {inst_freq -= twopi;}
             last_phase = curr_phase;
-            float dt = performTransfer ? dt_highpass[0].processSample(1 - (inst_freq/w0)) : 0.f;
+            float dt = performTransfer ?
+                dt_bandpass[0].processSample(dt_bandpass[1].processSample(1 - (inst_freq/w0)))
+                : 0.f;
             
             // filters initialized with Butterworth cascade in reverse order
             float envBPout = envelopeBP[0].processSample(
@@ -600,11 +618,11 @@ void VibratoTransferAudioProcessor::initialize_env_bp() {
     }
 }
 
-void VibratoTransferAudioProcessor::initialize_dt_hp() {
+void VibratoTransferAudioProcessor::initialize_dt_bp() {
     double gain = 0.0;
-    bool initialized = b_designer.hiPass(fs, 1.0, 0.f, 2, dt_highpass, gain);
+    bool initialized = b_designer.bandPass(fs, 4.0, 10.0, 2, dt_bandpass, gain);
     if (initialized) {
-        dt_highpass[0].gainCorrectNumerator(gain);
+        dt_bandpass[1].gainCorrectNumerator(gain);
     }
 }
 
@@ -627,13 +645,14 @@ void VibratoTransferAudioProcessor::resetProcessing() {
     memset(last_f0s, 0, NUM_F0 * sizeof(float));
     previous_f0_sum = 0;
     previous_f0_count = 0;
+    f0_queue.clear();
     for (Biquad quad : f0_bandpass) {
         quad.clear();
     }
     for (Biquad quad : envelopeBP) {
         quad.clear();
     }
-    for (Biquad quad : dt_highpass) {
+    for (Biquad quad : dt_bandpass) {
         quad.clear();
     }
     hilbert_left[0].clear(); hilbert_left[1].clear(); hilbert_left[2].clear(); hilbert_left[3].clear();
