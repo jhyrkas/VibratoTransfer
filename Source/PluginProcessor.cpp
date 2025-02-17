@@ -264,7 +264,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     auto* inputData = mainInputOutput.getArrayOfWritePointers();
     
     process_delay = process_delay && !bufferTooQuiet(bp_buf, blockSize);
-#if 0 // block processing
+#if 1 // block processing
     // putting the if statement outside of the processing loop
     if (process_delay) {
         // STEP 1: f0 bandpass filter and perform the hilbert transform
@@ -325,7 +325,18 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             inputData[1][i] = make_up_gain * env * right;
 
             read_pointer = performTransfer ? (read_pointer + 1) - dt_scaler*dt_buf[i] : (read_pointer + 1);
-            read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
+            //read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
+            // slow but double checking
+            read_pointer = fmod(read_pointer, del_length);
+            
+            // read pointer too close to write pointer
+            if (read_pointer - write_pointer <= 1.f && read_pointer - write_pointer >= 0.f) {
+                if (dt_buf[i] > 0) {
+                    bool tmp = true; // no-op: delay exceeded delay length
+                } else {
+                    bool tmp = false; // no-op: delay caught up to write head
+                }
+            }
             
             // visualize dt
             dt_buffer.setSample(0, i, performTransfer ? dt_scaler*dt_buf[i] : 0.f);
@@ -454,6 +465,12 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
 #endif
     del_vis.pushBuffer(dt_buffer);
     amp_vis.pushBuffer(amp_buffer);
+    
+    for (int i = 1; i < blockSize; ++i) {
+        if (fabsf(dt_buffer.getSample(0, i) - dt_buffer.getSample(0, i-1)) > 0.01) {
+            bool tmp = true; // no-op
+        }
+    }
 }
 
 //==============================================================================
@@ -520,7 +537,15 @@ float VibratoTransferAudioProcessor::find_f0_SNAC() {
         }
     }
     
-    return fs / peak_index;
+    // parabolic interpolation, based on FFT interp
+    // https://ccrma.stanford.edu/~jos/sasp/Quadratic_Interpolation_Spectral_Peaks.html
+    float alpha = ac_buffer[peak_index-1];
+    float beta = ac_buffer[peak_index];
+    float gamma = ac_buffer[peak_index+1];
+    float peak_index_interp = peak_index + 0.5 * (alpha - gamma)/(alpha - 2*beta + gamma);
+    
+    //return fs / peak_index;
+    return fs / peak_index_interp;
 }
 
 bool VibratoTransferAudioProcessor::bufferTooQuiet(auto* data, int size) {
