@@ -22,6 +22,7 @@
 #define MAX_BUF 2048
 #define DEL_LAG 512
 #define AMP_CNST 0.708 // -3 dB
+#define NUM_F0 8
 
 //==============================================================================
 /**
@@ -92,8 +93,8 @@ private:
     float del_buffer_r[V_NFFT]; // this buffers the right input channel
     int write_pointer = DEL_LAG; // initial delay offset
     float read_pointer = 0;
-    std::vector<Biquad> dt_highpass;
-    void initialize_dt_hp();
+    std::vector<Biquad> dt_bandpass;
+    void initialize_dt_bp();
     
     // f0 analysis business
     // 2*NFFT because we store the FFT result in place
@@ -108,8 +109,8 @@ private:
     bool f0_stabilized = false;
     bool filter_initialized = false;
     
-    float last_f0s[8] = {0.f, 0.f, 0.f, 0.f,0.f, 0.f, 0.f, 0.f}; // starting with 8, totally arbitrary
-    int last_f0s_mask = 7;
+    float last_f0s[NUM_F0] = {0.f, 0.f, 0.f, 0.f,0.f, 0.f, 0.f, 0.f}; // starting with 8, totally arbitrary
+    int last_f0s_mask = NUM_F0-1;
     int last_f0s_pointer = 0;
     
     // hilbert business
@@ -145,7 +146,7 @@ private:
     float dt_buf[MAX_BUF];
     
     // cumsum of RFS (this is effectively the last offset of the delay function)
-    //float Dt = 0;
+    float Dt = 0;
     
     // envelope business
     std::vector<Biquad> envelopeBP;
@@ -185,4 +186,6 @@ private:
     float amp_scaler = 1.f;
     float make_up_gain = 1.f;
     std::atomic<bool> updateParams { false };
+    
+    void resetProcessing();
 };

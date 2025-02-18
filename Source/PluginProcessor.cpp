@@ -133,7 +133,7 @@ void VibratoTransferAudioProcessor::prepareToPlay (double sampleRate, int sample
     bp_initialized = false;
     //envelopeBP.setParams(1.f, 10.f, fs); // 1 Hz thru 10 Hz, this does a buffer clear
     initialize_env_bp(); // this does a buffer clear
-    initialize_dt_hp();
+    initialize_dt_bp();
     
     del_vis.clear();
     del_vis.setSamplesPerBlock(samplesPerBlock);
@@ -199,7 +199,6 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     int sc_channels = sideChainInput.getNumChannels();
     float sc_norm = 1.f / sc_channels;
     auto* sc_buffers = sideChainInput.getArrayOfWritePointers();
-#if 1 // block processing
     // analysis loop - side chain (right channel for testing)
 
     // STEP 1: buffer sidechain signal
@@ -223,25 +222,8 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             // if analysis signal is too quiet, don't even bother
             if (bufferTooQuiet(ac_buffer, V_H_NFFT)) {
                 if (bp_initialized) {
-                    bp_initialized = false;
+                    resetProcessing();
                 }
-                process_delay = false;
-                last_f0s[last_f0s_pointer] = f0;
-                last_f0s_pointer = (last_f0s_pointer+1) & last_f0s_mask;
-                previous_f0_sum = 0;
-                previous_f0_count = 0;
-                for (Biquad quad : f0_bandpass) {
-                    quad.clear();
-                }
-                for (Biquad quad : envelopeBP) {
-                    quad.clear();
-                }
-                for (Biquad quad : dt_highpass) {
-                    quad.clear();
-                }
-                hilbert_left[0].clear(); hilbert_left[1].clear(); hilbert_left[2].clear(); hilbert_left[3].clear();
-                hilbert_right[0].clear(); hilbert_right[1].clear(); hilbert_right[2].clear(); hilbert_right[3].clear();
-                blocks_processed = 0;
             // do autocorrelation and SNAC
             } else {
                 mayer_realfft(V_NFFT,ac_buffer); // FFT
@@ -262,11 +244,13 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                 if (f0Stable()) {
                     // TODO: it seems for some signals this is too narrow!
                     if (!bp_initialized) {initialize_bp(0.90*f0, 1.10*f0);}
-                    if (previous_f0_count < averaging_frames) {
-                        previous_f0_sum += f0;
-                        previous_f0_count += 1;
-                    }
+                    previous_f0_sum += f0;
+                    previous_f0_count += 1;
                     process_delay = true;
+                } else {
+                    if (bp_initialized) {
+                        resetProcessing();
+                    }
                 }
             }
             // now reset the buffers
@@ -278,6 +262,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     auto* inputData = mainInputOutput.getArrayOfWritePointers();
     
     process_delay = process_delay && !bufferTooQuiet(bp_buf, blockSize);
+#if 1 // block processing
     // putting the if statement outside of the processing loop
     if (process_delay) {
         // STEP 1: f0 bandpass filter and perform the hilbert transform
@@ -318,7 +303,8 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         last_right_out = hilbert_right_buf[blockSize-1];
         envelopeBP[1].processBlockInPlace(env_buf, blockSize);
         envelopeBP[0].processBlockInPlace(env_buf, blockSize);
-        dt_highpass[0].processBlockInPlace(dt_buf, blockSize);
+        dt_bandpass[1].processBlockInPlace(dt_buf, blockSize);
+        dt_bandpass[0].processBlockInPlace(dt_buf, blockSize);
         
         // STEP 3: perform transfer
         for (int i = 0; i < blockSize; ++i) {
@@ -359,7 +345,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         float dt = fmin(fabsf(dt_diff/blockSize), 0.002);
         dt = dt_diff > 0 ? dt : -dt;
         float e_diff = AMP_CNST - last_env;
-        float env_incr = fmin(fabsf(e_diff/blockSize),0.001);
+        float env_incr = fmin(fabsf(e_diff/blockSize),0.001); // PROBLEM: this takes forever
         env_incr = e_diff < 0 ? -env_incr : env_incr;
         
         for (int i = 0; i < blockSize; ++i) {
@@ -384,81 +370,6 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         }
     }
 #else // sample-by-sample processing
-    // analysis loop - side chain (right channel for testing)
-    for (int i = 0; i < blockSize; ++i) {
-        // sum to mono, normalize
-        for (int channel = 0; channel < sc_channels; ++channel) {
-            float samp = sc_norm * sc_buffers[channel][i];
-            sc_buffer[sc_pointer] += samp;
-            ac_buffer[sc_pointer] += samp;
-        }
-        bp_buf[i] = sc_buffer[sc_pointer]; // store in bandpass buffer
-        sc_pointer = (sc_pointer + 1) & Nfft_mask;
-        ++n_buffered;
-            
-        // STEP 2: if we have buffered enough, do f0 analysis
-        // TODO: is there any way to flag this outside of the for-loop?
-        if (n_buffered == V_H_NFFT) {
-            n_buffered = 0; // reset
-            float f0 = 0.f;
-            
-            // if analysis signal is too quiet, don't even bother
-            if (bufferTooQuiet(ac_buffer, V_H_NFFT)) {
-                if (bp_initialized) {
-                    bp_initialized = false;
-                }
-                process_delay = false;
-                last_f0s[last_f0s_pointer] = f0;
-                last_f0s_pointer = (last_f0s_pointer+1) & last_f0s_mask;
-                previous_f0_sum = 0;
-                previous_f0_count = 0;
-                for (Biquad quad : f0_bandpass) {
-                    quad.clear();
-                }
-                for (Biquad quad : dt_highpass) {
-                    quad.clear();
-                }
-                envelopeBP[0].clear(); envelopeBP[1].clear();
-                hilbert_left[0].clear(); hilbert_left[1].clear(); hilbert_left[2].clear(); hilbert_left[3].clear();
-                hilbert_right[0].clear(); hilbert_right[1].clear(); hilbert_right[2].clear(); hilbert_right[3].clear();
-                blocks_processed = 0;
-            // do autocorrelation and SNAC
-            } else {
-                mayer_realfft(V_NFFT,ac_buffer); // FFT
-                ac_buffer[0] *= ac_buffer[0]; // process DC
-                ac_buffer[V_H_NFFT] *= ac_buffer[V_H_NFFT]; // process Nyquist
-                // process positive frequencies
-                for (int k = 1; k < V_H_NFFT; ++k) {
-                    ac_buffer[k] = (ac_buffer[k] * ac_buffer[k] + ac_buffer[V_NFFT-k] * ac_buffer[V_NFFT-k]); // real
-                    ac_buffer[V_NFFT-k] = 0.0; // imaginary
-                }
-                mayer_realifft(V_NFFT, ac_buffer); // IFFT
-                
-                // peak finding
-                f0 = find_f0_SNAC();
-                last_f0s[last_f0s_pointer] = f0;
-                last_f0s_pointer = (last_f0s_pointer + 1) & last_f0s_mask;
-                // if f0 is stable, process bp if necessary and set delay processing to true
-                if (f0Stable()) {
-                    // TODO: it seems for some signals this is too narrow!
-                    if (!bp_initialized) {initialize_bp(0.90*f0, 1.10*f0);}
-                    if (previous_f0_count < averaging_frames) {
-                        previous_f0_sum += f0;
-                        previous_f0_count += 1;
-                    }
-                    process_delay = true;
-                }
-            }
-            // now reset the buffer
-            memset(ac_buffer, 0, V_NFFT * sizeof(float));
-            memset(sc_buffer, 0, V_H_NFFT * sizeof(float));
-        }
-    }
-    
-    // processing loop - main input (left channel for testing)
-    auto* inputData = mainInputOutput.getArrayOfWritePointers();
-    
-    process_delay = process_delay && !bufferTooQuiet(bp_buf, blockSize);
     // putting the if statement outside of the processing loop
     if (process_delay) {
         float w0 = T * twopi * (previous_f0_sum / previous_f0_count);
@@ -485,7 +396,8 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             while (inst_freq < 0) {inst_freq += twopi;}
             while (inst_freq > twopi) {inst_freq -= twopi;}
             last_phase = curr_phase;
-            float dt = performTransfer ? dt_highpass[0].processSample(1 - (inst_freq/w0)) : 0.f;
+            float dt = performTransfer ? 1 - (inst_freq/w0) : 0.f;
+            dt = dt_bandpass[0].processSample(dt_bandpass[1].processSample(dt));
             
             // filters initialized with Butterworth cascade in reverse order
             float envBPout = envelopeBP[0].processSample(
@@ -495,7 +407,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                                                          );
             // TODO: add a clip around last_env
             last_env = performTransfer ? AMP_CNST + amp_scaler*envBPout : AMP_CNST;
-            read_pointer = (read_pointer + 1) - dt_scaler*dt;
+            read_pointer = performTransfer ? (read_pointer + 1) - dt_scaler*dt : (read_pointer + 1);
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
             last_right_out = hb_right;
             
@@ -608,7 +520,15 @@ float VibratoTransferAudioProcessor::find_f0_SNAC() {
         }
     }
     
-    return fs / peak_index;
+    // parabolic interpolation, based on FFT interp
+    // https://ccrma.stanford.edu/~jos/sasp/Quadratic_Interpolation_Spectral_Peaks.html
+    float alpha = ac_buffer[peak_index-1];
+    float beta = ac_buffer[peak_index];
+    float gamma = ac_buffer[peak_index+1];
+    float peak_index_interp = peak_index + 0.5 * (alpha - gamma)/(alpha - 2*beta + gamma);
+    
+    //return fs / peak_index;
+    return fs / peak_index_interp;
 }
 
 bool VibratoTransferAudioProcessor::bufferTooQuiet(auto* data, int size) {
@@ -619,19 +539,22 @@ bool VibratoTransferAudioProcessor::bufferTooQuiet(auto* data, int size) {
         auto samp = data[i] < 0 ? -data[i] : data[i];
         samps_above_thresh = samp > l_thresh ? samps_above_thresh + 1 : samps_above_thresh;
     }
+    
     return samps_above_thresh < s_thresh;
 }
 
 bool VibratoTransferAudioProcessor::f0Stable() {
     // have we done at least four non-zero analyses
-    float thresh = 0.05 * last_f0s[last_f0s_mask]; // this is also maybe too narrow
+    float thresh = 0.1 * last_f0s[last_f0s_mask]; // this is also maybe too narrow
     if (thresh == 0.f) { return false; }
     // really bad
-    bool stable = fabsf(last_f0s[0] - last_f0s[last_f0s_mask]) < thresh;
+    int stableCount = fabsf(last_f0s[0] - last_f0s[last_f0s_mask]) < thresh;
     for (int i = 1; i < last_f0s_mask; ++i) {
-        stable = stable && fabsf(last_f0s[i] - last_f0s[i-1]) < thresh;
+        stableCount += fabsf(last_f0s[i] - last_f0s[i-1]) < thresh;
     }
-    return stable;
+    
+    // six of eight within threshold
+    return stableCount >= last_f0s_mask - 1;
 }
 
 void VibratoTransferAudioProcessor::initialize_bp(float bp_low, float bp_high) {
@@ -650,11 +573,12 @@ void VibratoTransferAudioProcessor::initialize_env_bp() {
     }
 }
 
-void VibratoTransferAudioProcessor::initialize_dt_hp() {
+void VibratoTransferAudioProcessor::initialize_dt_bp() {
     double gain = 0.0;
-    bool initialized = b_designer.hiPass(fs, 1.0, 0.f, 2, dt_highpass, gain);
+    // TODO: 1 Hz is too low, 4 Hz might be too high. experiment with this range
+    bool initialized = b_designer.bandPass(fs, 2.0, 10.0, 2, dt_bandpass, gain);
     if (initialized) {
-        dt_highpass[0].gainCorrectNumerator(gain);
+        dt_bandpass[1].gainCorrectNumerator(gain);
     }
 }
 
@@ -668,4 +592,25 @@ VibVisualizer& VibratoTransferAudioProcessor::getAmpVisualizer() {
 
 void VibratoTransferAudioProcessor::valueTreePropertyChanged(juce::ValueTree &treeWhosePropertyHasChanged, const juce::Identifier &property) {
     updateParams = true;
+}
+
+void VibratoTransferAudioProcessor::resetProcessing() {
+    bp_initialized = false;
+    process_delay = false;
+    last_f0s_pointer = 0;
+    memset(last_f0s, 0, NUM_F0 * sizeof(float));
+    previous_f0_sum = 0;
+    previous_f0_count = 0;
+    for (Biquad quad : f0_bandpass) {
+        quad.clear();
+    }
+    for (Biquad quad : envelopeBP) {
+        quad.clear();
+    }
+    for (Biquad quad : dt_bandpass) {
+        quad.clear();
+    }
+    hilbert_left[0].clear(); hilbert_left[1].clear(); hilbert_left[2].clear(); hilbert_left[3].clear();
+    hilbert_right[0].clear(); hilbert_right[1].clear(); hilbert_right[2].clear(); hilbert_right[3].clear();
+    blocks_processed = 0;
 }
