@@ -10,7 +10,6 @@
 
 #include <math.h>
 #include <numbers>
-#include <deque>
 #include <vector>
 #include <JuceHeader.h>
 #include "Biquad.hpp"
@@ -144,7 +143,6 @@ private:
     int averaging_frames; // set in prepareToPlay using fs
     float previous_f0_sum = 0;
     int previous_f0_count = 0; // using these two to calculate previous f0 mean
-    std::deque<float> f0_queue;
     float dt_buf[MAX_BUF];
     
     // cumsum of RFS (this is effectively the last offset of the delay function)

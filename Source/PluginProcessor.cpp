@@ -244,17 +244,6 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                 if (f0Stable()) {
                     // TODO: it seems for some signals this is too narrow!
                     if (!bp_initialized) {initialize_bp(0.90*f0, 1.10*f0);}
-                    /*
-                    if (previous_f0_count < averaging_frames) {
-                        previous_f0_sum += f0;
-                        previous_f0_count += 1;
-                        f0_queue.push_back(f0);
-                    } else {
-                        float last_f0 = f0_queue.front();
-                        previous_f0_sum = previous_f0_sum + f0 - last_f0;
-                        f0_queue.pop_front();
-                        f0_queue.push_back(f0);
-                    }*/
                     previous_f0_sum += f0;
                     previous_f0_count += 1;
                     process_delay = true;
@@ -336,18 +325,6 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
 
             read_pointer = performTransfer ? (read_pointer + 1) - dt_scaler*dt_buf[i] : (read_pointer + 1);
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
-            // slow but double checking
-            //read_pointer = fmod(read_pointer, del_length);
-            Dt += performTransfer ? dt_buf[i] : 0;
-            
-            // read pointer too close to write pointer
-            if (read_pointer - write_pointer <= 1.f && read_pointer - write_pointer >= 0.f) {
-                if (dt_buf[i] > 0) {
-                    float tmp = Dt; // no-op: delay exceeded delay length
-                } else {
-                    float tmp = Dt; // no-op: delay caught up to write head
-                }
-            }
             
             // visualize dt
             dt_buffer.setSample(0, i, performTransfer ? dt_scaler*dt_buf[i] : 0.f);
@@ -385,11 +362,6 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             read_pointer = read_pointer + 1 - dt;
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
             
-            Dt += dt;
-            
-            float p_diff = write_pointer - read_pointer;
-            p_diff = ((int)p_diff & del_length_mask) + (p_diff - (int)p_diff);
-            
             // visualize dt
             dt_buffer.setSample(0, i, dt);
             amp_buffer.setSample(0, i, last_env);
@@ -424,9 +396,8 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             while (inst_freq < 0) {inst_freq += twopi;}
             while (inst_freq > twopi) {inst_freq -= twopi;}
             last_phase = curr_phase;
-            float dt = performTransfer ?
-                dt_bandpass[0].processSample(dt_bandpass[1].processSample(1 - (inst_freq/w0)))
-                : 0.f;
+            float dt = performTransfer ? 1 - (inst_freq/w0) : 0.f;
+            dt = dt_bandpass[0].processSample(dt_bandpass[1].processSample(dt));
             
             // filters initialized with Butterworth cascade in reverse order
             float envBPout = envelopeBP[0].processSample(
@@ -436,7 +407,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                                                          );
             // TODO: add a clip around last_env
             last_env = performTransfer ? AMP_CNST + amp_scaler*envBPout : AMP_CNST;
-            read_pointer = (read_pointer + 1) - dt_scaler*dt;
+            read_pointer = performTransfer ? (read_pointer + 1) - dt_scaler*dt : (read_pointer + 1);
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
             last_right_out = hb_right;
             
@@ -483,12 +454,6 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
 #endif
     del_vis.pushBuffer(dt_buffer);
     amp_vis.pushBuffer(amp_buffer);
-    
-    for (int i = 1; i < blockSize; ++i) {
-        if (fabsf(dt_buffer.getSample(0, i) - dt_buffer.getSample(0, i-1)) > 0.01) {
-            bool tmp = true; // no-op
-        }
-    }
 }
 
 //==============================================================================
@@ -575,11 +540,6 @@ bool VibratoTransferAudioProcessor::bufferTooQuiet(auto* data, int size) {
         samps_above_thresh = samp > l_thresh ? samps_above_thresh + 1 : samps_above_thresh;
     }
     
-    // if we are currently processing and fall below the threshold
-    if (process_delay && samps_above_thresh < s_thresh) {
-        bool tmp = samps_above_thresh < s_thresh; // no-op for breakpoint
-    }
-    
     return samps_above_thresh < s_thresh;
 }
 
@@ -591,11 +551,6 @@ bool VibratoTransferAudioProcessor::f0Stable() {
     int stableCount = fabsf(last_f0s[0] - last_f0s[last_f0s_mask]) < thresh;
     for (int i = 1; i < last_f0s_mask; ++i) {
         stableCount += fabsf(last_f0s[i] - last_f0s[i-1]) < thresh;
-    }
-    
-    // if we are currently processing and f0 becomes unstable
-    if (process_delay && stableCount < last_f0s_mask - 1) {
-        bool tmp = false; // no-op for breakpoint
     }
     
     // six of eight within threshold
@@ -620,7 +575,8 @@ void VibratoTransferAudioProcessor::initialize_env_bp() {
 
 void VibratoTransferAudioProcessor::initialize_dt_bp() {
     double gain = 0.0;
-    bool initialized = b_designer.bandPass(fs, 4.0, 10.0, 2, dt_bandpass, gain);
+    // TODO: 1 Hz is too low, 4 Hz might be too high. experiment with this range
+    bool initialized = b_designer.bandPass(fs, 2.0, 10.0, 2, dt_bandpass, gain);
     if (initialized) {
         dt_bandpass[1].gainCorrectNumerator(gain);
     }
@@ -645,7 +601,6 @@ void VibratoTransferAudioProcessor::resetProcessing() {
     memset(last_f0s, 0, NUM_F0 * sizeof(float));
     previous_f0_sum = 0;
     previous_f0_count = 0;
-    f0_queue.clear();
     for (Biquad quad : f0_bandpass) {
         quad.clear();
     }
