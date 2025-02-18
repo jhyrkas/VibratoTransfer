@@ -33,6 +33,12 @@ private:
     juce::Slider dtSlider;
     juce::Slider mugSlider; // make up gain
     
+    juce::Label amLabel;
+    juce::Label fmLabel;
+    juce::Label mugLabel;
+    juce::Label amVizLabel;
+    juce::Label fmVizLabel;
+    
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> fmScalerAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> amScalerAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> makeUpGainAttachment;

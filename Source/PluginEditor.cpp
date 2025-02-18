@@ -21,22 +21,23 @@ VibratoTransferAudioProcessorEditor::VibratoTransferAudioProcessorEditor (Vibrat
     
     // these define the parameters of our slider object
     ampSlider.setSliderStyle (juce::Slider::LinearBarVertical);
-    ampSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 90, 0);
-    ampSlider.setPopupDisplayEnabled (true, false, this);
-    ampSlider.setTextValueSuffix ("AMTransferScaler");
+    ampSlider.setTextBoxStyle (juce::Slider::TextBoxAbove, false, 90, ampSlider.getTextBoxHeight());
     ampSlider.setValue(1.0);
+    amLabel.setText("AM", juce::dontSendNotification);
+    amLabel.attachToComponent(&ampSlider, false);
  
     dtSlider.setSliderStyle (juce::Slider::LinearBarVertical);
-    dtSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 90, 0);
-    dtSlider.setPopupDisplayEnabled (true, false, this);
-    dtSlider.setTextValueSuffix ("FMTransferScaler");
+    dtSlider.setTextBoxStyle (juce::Slider::TextBoxAbove, false, 90, dtSlider.getTextBoxHeight());
     dtSlider.setValue(1.0);
+    fmLabel.setText("FM", juce::dontSendNotification);
+    fmLabel.attachToComponent(&dtSlider, false);
     
     mugSlider.setSliderStyle (juce::Slider::LinearBarVertical);
-    mugSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 90, 0);
-    mugSlider.setPopupDisplayEnabled (true, false, this);
-    mugSlider.setTextValueSuffix ("MakeUpGainScaler");
+    mugSlider.setTextBoxStyle (juce::Slider::TextBoxAbove, false, 90, mugSlider.getTextBoxHeight());
+    mugSlider.setTextValueSuffix (" dB");
     mugSlider.setValue(0.0);
+    mugLabel.setText("Gain", juce::dontSendNotification);
+    mugLabel.attachToComponent(&mugSlider, false);
     
     fmScalerAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.getVTS(), "fmScaler", dtSlider);
     amScalerAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.getVTS(), "amScaler", ampSlider);
@@ -48,6 +49,11 @@ VibratoTransferAudioProcessorEditor::VibratoTransferAudioProcessorEditor (Vibrat
     
     addAndMakeVisible(audioProcessor.getDelayVisualizer());
     addAndMakeVisible(audioProcessor.getAmpVisualizer());
+    
+    fmVizLabel.setText("Pitch Shift", juce::dontSendNotification);
+    fmVizLabel.attachToComponent(&(audioProcessor.getDelayVisualizer()), false);
+    amVizLabel.setText("AM Envelope", juce::dontSendNotification);
+    amVizLabel.attachToComponent(&(audioProcessor.getAmpVisualizer()), false);
 }
 
 VibratoTransferAudioProcessorEditor::~VibratoTransferAudioProcessorEditor()
@@ -69,11 +75,14 @@ void VibratoTransferAudioProcessorEditor::resized()
 {
     // This is generally where you'll want to lay out the positions of any
     // subcomponents in your editor..
-    ampSlider.setBounds (30, 30, 20, getHeight() - 60);
-    dtSlider.setBounds (60, 30, 20, getHeight() - 60);
-    mugSlider.setBounds (90, 30, 20, getHeight() - 60);
-    audioProcessor.getDelayVisualizer().setBounds(150, 20, getWidth() - 170, getHeight()/2 - 30);
-    audioProcessor.getAmpVisualizer().setBounds(150, getHeight()/2, getWidth() - 170, getHeight()/2 - 30);
+    //ampSlider.setBounds (30, 30, 20, getHeight() - 60);
+    //dtSlider.setBounds (60, 30, 20, getHeight() - 60);
+    //mugSlider.setBounds (90, 30, 20, getHeight() - 60);
+    ampSlider.setBounds (5, 30, 50, getHeight() - 60);
+    dtSlider.setBounds (60, 30, 50, getHeight() - 60);
+    mugSlider.setBounds (115, 30, 50, getHeight() - 60);
+    audioProcessor.getDelayVisualizer().setBounds(170, 30, getWidth() - 190, getHeight()/2 - 40);
+    audioProcessor.getAmpVisualizer().setBounds(170, getHeight()/2 + 10, getWidth() - 190, getHeight()/2 - 40);
 }
 
 // keeping this code around to reference later, delete after it has been put in the right spot

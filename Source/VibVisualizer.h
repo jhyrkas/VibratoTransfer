@@ -16,6 +16,6 @@
 class VibVisualizer : public juce::AudioVisualiserComponent {
 public:
     VibVisualizer();
-    ~VibVisualizer() override;
+    virtual ~VibVisualizer() override;
 private:
 };
