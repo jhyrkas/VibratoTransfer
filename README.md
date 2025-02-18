@@ -2,7 +2,6 @@ This plug-in implements a real-time algorithm for vibrato transfer.
 
 To build the plug-in, you will need to use download the JUCE framework and open VibratoTransfer.jucer file using the Projucer software.
 This code is tested on macOS and has not yet been tested on Windows.
-The source code will be hosted in Github at the end of the anonymous review period for the  research paper associated with this implementation.
 
 The plug-in takes an input sound in stereo (the audio on which to apply vibrato) and the target sound (the audio that contains vibrato) in the sidechain.
 The plug-in contains three sliders that control the amount of amplitude and frequency modulation that will be
