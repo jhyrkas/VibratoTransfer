@@ -189,8 +189,8 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     // This is here to avoid people getting screaming feedback
     // when they first compile a plugin, but obviously you don't need to keep
     // this code if your algorithm always overwrites all the output channels.
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-        buffer.clear (i, 0, buffer.getNumSamples());
+    //for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
+    //    buffer.clear (i, 0, buffer.getNumSamples());
     
     juce::AudioSampleBuffer mainInputOutput = getBusBuffer(buffer, true, 0);
     juce::AudioSampleBuffer sideChainInput  = getBusBuffer(buffer, true, 1);
@@ -198,14 +198,14 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     bool performTransfer = blocks_processed >= onset_time_blocks;
     int sc_channels = sideChainInput.getNumChannels();
     float sc_norm = 1.f / sc_channels;
-    auto* sc_buffers = sideChainInput.getArrayOfWritePointers();
+    const auto* sc_inputs = sideChainInput.getArrayOfReadPointers();
     // analysis loop - side chain (right channel for testing)
 
     // STEP 1: buffer sidechain signal
     for (int i = 0; i < blockSize; ++i) {
         // sum to mono, normalize
         for (int channel = 0; channel < sc_channels; ++channel) {
-            float samp = sc_norm * sc_buffers[channel][i];
+            float samp = sc_norm * sc_inputs[channel][i];
             sc_buffer[sc_pointer] += samp;
             ac_buffer[sc_pointer] += samp;
         }
