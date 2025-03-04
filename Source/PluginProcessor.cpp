@@ -141,6 +141,8 @@ void VibratoTransferAudioProcessor::prepareToPlay (double sampleRate, int sample
     amp_vis.setSamplesPerBlock(samplesPerBlock);
     dt_buffer.setSize(1, blockSize);
     amp_buffer.setSize(1, blockSize);
+    
+    env_cf_inc = 1.f / (fs * 0.005); // crossfade over 5 ms
 }
 
 void VibratoTransferAudioProcessor::releaseResources()
@@ -172,8 +174,6 @@ bool VibratoTransferAudioProcessor::isBusesLayoutSupported (const BusesLayout& l
 void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
-    auto totalNumInputChannels  = getTotalNumInputChannels();
-    auto totalNumOutputChannels = getTotalNumOutputChannels();
     
     // parameter updates
     if (updateParams) {
@@ -313,9 +313,12 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             del_buffer_r[write_pointer] = inputData[1][i];
             write_pointer = (write_pointer + 1) & del_length_mask;
             
+            env_cf = env_cf >= 1.f ? 1.f : env_cf + env_cf_inc;
             // TODO: add a clip around last_env
             float env = performTransfer ?
-                        (i == 0 ? AMP_CNST + amp_scaler*last_env : AMP_CNST + amp_scaler*env_buf[i-1]) :
+                            (i == 0 ?
+                                AMP_CNST + env_cf*amp_scaler*last_env :
+                                AMP_CNST + env_cf*amp_scaler*env_buf[i-1]) :
                         AMP_CNST;
             // output from buffer
             float left,right;
@@ -406,7 +409,8 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                                                             )
                                                          );
             // TODO: add a clip around last_env
-            last_env = performTransfer ? AMP_CNST + amp_scaler*envBPout : AMP_CNST;
+            env_cf = env_cf >= 1.f ? 1.f : env_cf + env_cf_inc;
+            last_env = performTransfer ? AMP_CNST + env_cf*amp_scaler*envBPout : AMP_CNST;
             read_pointer = performTransfer ? (read_pointer + 1) - dt_scaler*dt : (read_pointer + 1);
             read_pointer = ((int)read_pointer & del_length_mask) + (read_pointer - (int)read_pointer);
             last_right_out = hb_right;
@@ -613,4 +617,5 @@ void VibratoTransferAudioProcessor::resetProcessing() {
     hilbert_left[0].clear(); hilbert_left[1].clear(); hilbert_left[2].clear(); hilbert_left[3].clear();
     hilbert_right[0].clear(); hilbert_right[1].clear(); hilbert_right[2].clear(); hilbert_right[3].clear();
     blocks_processed = 0;
+    env_cf = 0.f;
 }
