@@ -153,6 +153,8 @@ private:
     float last_env = AMP_CNST;
     void initialize_env_bp();
     float env_buf[MAX_BUF];
+    float env_cf = 0.f;
+    float env_cf_inc = 0.f; // set in prepareToPlay
     
     // onset business TODO: figure most of this out
     float onset_level = 0.1; // -20 dB
