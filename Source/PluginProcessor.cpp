@@ -252,14 +252,6 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     // processing loop - main input (left channel for testing)
     auto* inputData = mainInputOutput.getArrayOfWritePointers();
     
-    //process_delay = process_delay && !bufferTooQuiet(bp_buf, blockSize);
-    if (process_delay) {
-        // here
-    }
-    process_delay = process_delay && !bufferTooQuiet(bp_buf, blockSize);
-    if (process_delay) {
-        // here
-    }
 #if 1 // block processing
     // putting the if statement outside of the processing loop
     if (process_delay) {
