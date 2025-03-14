@@ -14,9 +14,9 @@ VibratoTransferAudioProcessor::VibratoTransferAudioProcessor()
 :
 #ifndef JucePlugin_PreferredChannelConfigurations
      AudioProcessor (BusesProperties()
-                       .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
-                       .withInput("Sidechain", juce::AudioChannelSet::stereo(), true)
+                       .withInput  ("Input",  juce::AudioChannelSet::stereo())
+                       .withOutput ("Output", juce::AudioChannelSet::stereo())
+                       .withInput("Sidechain", juce::AudioChannelSet::stereo())
                        ),
 #endif
 b_designer(),
@@ -42,19 +42,14 @@ parameters(*this, nullptr, juce::Identifier("VibratoTransfer"),
     memset(ac_buffer, 0, V_NFFT*sizeof(float));
     memset(dt_buf, 0, MAX_BUF*sizeof(float));
     memset(env_buf, 0, MAX_BUF*sizeof(float));
+    memset(last_f0s, 0, NUM_F0*sizeof(float));
+    dt_buffer.clear();
+    amp_buffer.clear();
     
     fmScaler = parameters.getRawParameterValue("fmScaler");
     amScaler = parameters.getRawParameterValue("amScaler");
     makeUpGain = parameters.getRawParameterValue("makeUpGain");
     parameters.state.addListener(this);
-    
-    // old code, different parameter setup
-    // TODO: look into this normalize range business
-    // https://docs.juce.com/master/tutorial_audio_parameter.html
-    //addParameter (fmScaler = new juce::AudioParameterFloat ({ "fmScaler", 1 }, "FM Scaler", 0.0f, 2.0f, 1.f));
-    //addParameter (amScaler = new juce::AudioParameterFloat ({ "amScaler", 1 }, "AM Scaler", 0.0f, 10.0f, 1.f));
-    //addParameter (makeUpGain = new juce::AudioParameterFloat ({ "makeUpGain", 1 }, "Make-up Gain", -6.f, 6.f, 0.f));
-    
 }
 
 VibratoTransferAudioProcessor::~VibratoTransferAudioProcessor()
@@ -154,6 +149,8 @@ void VibratoTransferAudioProcessor::releaseResources()
 #ifndef JucePlugin_PreferredChannelConfigurations
 bool VibratoTransferAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
+    /*
+    // OLD CODE
     // This is the place where you check if the layout is supported.
     // In this template code we only support mono or stereo.
     // Some plugin hosts, such as certain GarageBand versions, will only
@@ -168,6 +165,11 @@ bool VibratoTransferAudioProcessor::isBusesLayoutSupported (const BusesLayout& l
 
     // sidechain can be mono or stereo, so don't check?
     return true;
+    */
+    
+    // FROM SIDECHAIN DEMO
+    return layouts.getMainInputChannelSet() == layouts.getMainOutputChannelSet()
+             && ! layouts.getMainInputChannelSet().isDisabled();
 }
 #endif
 
@@ -183,33 +185,26 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         updateParams = false;
     }
     
-    // In case we have more outputs than inputs, this code clears any output
-    // channels that didn't contain input data, (because these aren't
-    // guaranteed to be empty - they may contain garbage).
-    // This is here to avoid people getting screaming feedback
-    // when they first compile a plugin, but obviously you don't need to keep
-    // this code if your algorithm always overwrites all the output channels.
-    //for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-    //    buffer.clear (i, 0, buffer.getNumSamples());
-    
     juce::AudioSampleBuffer mainInputOutput = getBusBuffer(buffer, true, 0);
     juce::AudioSampleBuffer sideChainInput  = getBusBuffer(buffer, true, 1);
     
     bool performTransfer = blocks_processed >= onset_time_blocks;
     int sc_channels = sideChainInput.getNumChannels();
-    float sc_norm = 1.f / sc_channels;
-    const auto* sc_inputs = sideChainInput.getArrayOfReadPointers();
+    //float sc_norm = sc_channels > 0 ? 1.f / sc_channels : 0.f;
+    //const auto* sc_inputs = sideChainInput.getArrayOfReadPointers();
     // analysis loop - side chain (right channel for testing)
 
     // STEP 1: buffer sidechain signal
     for (int i = 0; i < blockSize; ++i) {
         // sum to mono, normalize
+        float samp = 0.f;
         for (int channel = 0; channel < sc_channels; ++channel) {
-            float samp = sc_norm * sc_inputs[channel][i];
-            sc_buffer[sc_pointer] += samp;
-            ac_buffer[sc_pointer] += samp;
+            //float samp = sc_norm * sc_inputs[channel][i];
+            samp += sideChainInput.getReadPointer(channel)[i];
         }
-        bp_buf[i] = sc_buffer[sc_pointer]; // store in bandpass buffer
+        sc_buffer[sc_pointer] = samp;
+        ac_buffer[sc_pointer] = samp;
+        bp_buf[i] = samp;
         sc_pointer = (sc_pointer + 1) & Nfft_mask;
         ++n_buffered;
         
@@ -226,15 +221,9 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                 }
             // do autocorrelation and SNAC
             } else {
-                mayer_realfft(V_NFFT,ac_buffer); // FFT
-                ac_buffer[0] *= ac_buffer[0]; // process DC
-                ac_buffer[V_H_NFFT] *= ac_buffer[V_H_NFFT]; // process Nyquist
-                // process positive frequencies
-                for (int k = 1; k < V_H_NFFT; ++k) {
-                    ac_buffer[k] = (ac_buffer[k] * ac_buffer[k] + ac_buffer[V_NFFT-k] * ac_buffer[V_NFFT-k]); // real
-                    ac_buffer[V_NFFT-k] = 0.0; // imaginary
-                }
-                mayer_realifft(V_NFFT, ac_buffer); // IFFT
+                mayer_realfft(V_NFFT,ac_buffer,coswrk,sinwrk); // FFT
+                computeAC();
+                mayer_realifft(V_NFFT, ac_buffer,coswrk,sinwrk); // IFFT
                 
                 // peak finding
                 f0 = find_f0_SNAC();
@@ -243,7 +232,9 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
                 // if f0 is stable, process bp if necessary and set delay processing to true
                 if (f0Stable()) {
                     // TODO: it seems for some signals this is too narrow!
-                    if (!bp_initialized) {initialize_bp(0.90*f0, 1.10*f0);}
+                    if (!bp_initialized) {
+                        initialize_bp(0.90*f0, 1.10*f0);
+                    }
                     previous_f0_sum += f0;
                     previous_f0_count += 1;
                     process_delay = true;
@@ -261,7 +252,14 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
     // processing loop - main input (left channel for testing)
     auto* inputData = mainInputOutput.getArrayOfWritePointers();
     
+    //process_delay = process_delay && !bufferTooQuiet(bp_buf, blockSize);
+    if (process_delay) {
+        // here
+    }
     process_delay = process_delay && !bufferTooQuiet(bp_buf, blockSize);
+    if (process_delay) {
+        // here
+    }
 #if 1 // block processing
     // putting the if statement outside of the processing loop
     if (process_delay) {
@@ -277,7 +275,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
         hilbert_right[1].processBlockInPlace(hilbert_right_buf, blockSize);
         hilbert_right[2].processBlockInPlace(hilbert_right_buf, blockSize);
         hilbert_right[3].processBlockInPlace(hilbert_right_buf, blockSize);
-        
+                
         // STEP 2: calculate the phase, dt, envelope and filter envelope
         float w0 = T * twopi * (previous_f0_sum / previous_f0_count);
         float last_phase_tmp = last_phase;
@@ -368,7 +366,7 @@ void VibratoTransferAudioProcessor::processBlock (juce::AudioBuffer<float>& buff
             // visualize dt
             dt_buffer.setSample(0, i, dt);
             amp_buffer.setSample(0, i, last_env);
-
+            
             last_env += env_incr;
         }
     }
@@ -503,6 +501,17 @@ void VibratoTransferAudioProcessor::fractional_delay_read(float index, float& le
     right = (1-high_frac) * del_buffer_r[low] + high_frac * del_buffer_r[high];
 }
 
+// autocorrelation
+void VibratoTransferAudioProcessor::computeAC() {
+    ac_buffer[0] *= ac_buffer[0]; // process DC
+    ac_buffer[V_H_NFFT] *= ac_buffer[V_H_NFFT]; // process Nyquist
+    // process positive frequencies
+    for (int k = 1; k < V_H_NFFT; ++k) {
+        ac_buffer[k] = (ac_buffer[k] * ac_buffer[k] + ac_buffer[V_NFFT-k] * ac_buffer[V_NFFT-k]); // real
+        ac_buffer[V_NFFT-k] = 0.0; // imaginary
+    }
+}
+
 float VibratoTransferAudioProcessor::find_f0_SNAC() {
     
     // TODO: any way to avoid divisions here?
@@ -537,7 +546,7 @@ float VibratoTransferAudioProcessor::find_f0_SNAC() {
 
 bool VibratoTransferAudioProcessor::bufferTooQuiet(auto* data, int size) {
     float l_thresh = 0.001f; // -60 dB TODO: parameterize?
-    int s_thresh = int(0.1*V_H_NFFT); // 10% of signal above thresh //TODO: better cheap env follower
+    int s_thresh = int(0.1*size); // 10% of signal above thresh //TODO: better cheap env follower
     int samps_above_thresh = 0;
     for (int i = 0; i < size; ++i) {
         auto samp = data[i] < 0 ? -data[i] : data[i];
