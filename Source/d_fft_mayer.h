@@ -50,11 +50,11 @@ typedef float t_sample;       /* a float type at most the same size */
 
 #define REAL t_sample
 
-void mayer_fht(REAL *fz, int n);
-void mayer_fft(int n, REAL *real, REAL *imag);
-void mayer_ifft(int n, REAL *real, REAL *imag);
-void mayer_realfft(int n, REAL *real);
-void mayer_realifft(int n, REAL *real);
+void mayer_fht(REAL *fz, int n, REAL *coswrk, REAL *sinwrk);
+void mayer_fft(int n, REAL *real, REAL *imag, REAL *coswrk, REAL *sinwrk);
+void mayer_ifft(int n, REAL *real, REAL *imag, REAL *coswrk, REAL *sinwrk);
+void mayer_realfft(int n, REAL *real, REAL *coswrk, REAL *sinwrk);
+void mayer_realifft(int n, REAL *real, REAL *coswrk, REAL *sinwrk);
 
 
 #ifdef __cplusplus

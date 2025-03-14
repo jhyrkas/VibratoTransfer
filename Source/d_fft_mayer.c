@@ -70,7 +70,7 @@
 #define FHT_SWAP(a,b,t) {(t)=(a);(a)=(b);(b)=(t);}
 #define TRIG_VARS                                                \
       int t_lam=0;
-#define TRIG_INIT(k,c,s)                                         \
+#define TRIG_INIT(k,c,s,coswrk,sinwrk)                                         \
      {                                                           \
       int i;                                                     \
       for (i=2 ; i<=k ; i++)                                     \
@@ -79,7 +79,7 @@
       c = 1;                                                     \
       s = 0;                                                     \
      }
-#define TRIG_NEXT(k,c,s)                                         \
+#define TRIG_NEXT(k,c,s,coswrk,sinwrk)                                         \
      {                                                           \
          int i,j;                                                \
          (t_lam)++;                                              \
@@ -117,7 +117,7 @@
 #define TRIG_RESET(k,c,s)
 #endif
 
-static REAL halsec[20]=
+static const REAL halsec[20]=
     {
      0,
      0,
@@ -136,7 +136,7 @@ static REAL halsec[20]=
      .50000000229794635411562887767906868558991922348920,
      .50000000057448658687873302235147272458812263401372
     };
-static REAL costab[20]=
+static const REAL costab[20]=
     {
      .00000000000000000000000000000000000000000000000000,
      .70710678118654752440084436210484903928483593768847,
@@ -155,7 +155,7 @@ static REAL costab[20]=
      .99999999540410731289097193313960614895889430318945,
      .99999999885102682756267330779455410840053741619428
     };
-static REAL sintab[20]=
+static const REAL sintab[20]=
     {
      1.0000000000000000000000000000000000000000000000000,
      .70710678118654752440084436210484903928483593768846,
@@ -174,50 +174,11 @@ static REAL sintab[20]=
      .00009587379909597734587051721097647635118706561284,
      .00004793689960306688454900399049465887274686668768
     };
-static REAL coswrk[20]=
-    {
-     .00000000000000000000000000000000000000000000000000,
-     .70710678118654752440084436210484903928483593768847,
-     .92387953251128675612818318939678828682241662586364,
-     .98078528040323044912618223613423903697393373089333,
-     .99518472667219688624483695310947992157547486872985,
-     .99879545620517239271477160475910069444320361470461,
-     .99969881869620422011576564966617219685006108125772,
-     .99992470183914454092164649119638322435060646880221,
-     .99998117528260114265699043772856771617391725094433,
-     .99999529380957617151158012570011989955298763362218,
-     .99999882345170190992902571017152601904826792288976,
-     .99999970586288221916022821773876567711626389934930,
-     .99999992646571785114473148070738785694820115568892,
-     .99999998161642929380834691540290971450507605124278,
-     .99999999540410731289097193313960614895889430318945,
-     .99999999885102682756267330779455410840053741619428
-    };
-static REAL sinwrk[20]=
-    {
-     1.0000000000000000000000000000000000000000000000000,
-     .70710678118654752440084436210484903928483593768846,
-     .38268343236508977172845998403039886676134456248561,
-     .19509032201612826784828486847702224092769161775195,
-     .09801714032956060199419556388864184586113667316749,
-     .04906767432741801425495497694268265831474536302574,
-     .02454122852291228803173452945928292506546611923944,
-     .01227153828571992607940826195100321214037231959176,
-     .00613588464915447535964023459037258091705788631738,
-     .00306795676296597627014536549091984251894461021344,
-     .00153398018628476561230369715026407907995486457522,
-     .00076699031874270452693856835794857664314091945205,
-     .00038349518757139558907246168118138126339502603495,
-     .00019174759731070330743990956198900093346887403385,
-     .00009587379909597734587051721097647635118706561284,
-     .00004793689960306688454900399049465887274686668768
-    };
-
 
 #define SQRT2_2   0.70710678118654752440084436210484
 #define SQRT2   2*0.70710678118654752440084436210484
 
-void mayer_fht(REAL *fz, int n)
+void mayer_fht(REAL *fz, int n, REAL *coswrk, REAL *sinwrk)
 {
 /*  REAL a,b;
 REAL c1,s1,s2,c2,s3,c3,s4,c4;
@@ -321,11 +282,11 @@ REAL c1,s1,s2,c2,s3,c3,s4,c4;
              gi     += k4;
              fi     += k4;
             } while (fi<fn);
-     TRIG_INIT(k,c1,s1);
+     TRIG_INIT(k,c1,s1,coswrk,sinwrk);
      for (ii=1;ii<kx;ii++)
         {
          REAL c2,s2;
-         TRIG_NEXT(k,c1,s1);
+         TRIG_NEXT(k,c1,s1,coswrk,sinwrk);
          c2 = c1*c1 - s1*s1;
          s2 = 2*(c1*s1);
              fn = fz + n;
@@ -366,7 +327,7 @@ REAL c1,s1,s2,c2,s3,c3,s4,c4;
     } while (k4<n);
 }
 
-void mayer_fft(int n, REAL *real, REAL *imag)
+void mayer_fft(int n, REAL *real, REAL *imag, REAL *coswrk, REAL *sinwrk)
 {
  REAL a,b,c,d;
  REAL q,r,s,t;
@@ -377,17 +338,17 @@ void mayer_fft(int n, REAL *real, REAL *imag)
   real[i] = (q+t)*.5; real[j] = (q-t)*.5;
   imag[i] = (s-r)*.5; imag[j] = (s+r)*.5;
  }
- mayer_fht(real,n);
- mayer_fht(imag,n);
+ mayer_fht(real,n,coswrk,sinwrk);
+ mayer_fht(imag,n,coswrk,sinwrk);
 }
 
-void mayer_ifft(int n, REAL *real, REAL *imag)
+void mayer_ifft(int n, REAL *real, REAL *imag, REAL *coswrk, REAL *sinwrk)
 {
  REAL a,b,c,d;
  REAL q,r,s,t;
  int i,j,k;
- mayer_fht(real,n);
- mayer_fht(imag,n);
+ mayer_fht(real,n,coswrk,sinwrk);
+ mayer_fht(imag,n,coswrk,sinwrk);
  for (i=1,j=n-1,k=n/2;i<k;i++,j--) {
   a = real[i]; b = real[j];  q=a+b; r=a-b;
   c = imag[i]; d = imag[j];  s=c+d; t=c-d;
@@ -396,11 +357,11 @@ void mayer_ifft(int n, REAL *real, REAL *imag)
  }
 }
 
-void mayer_realfft(int n, REAL *real)
+void mayer_realfft(int n, REAL *real, REAL *coswrk, REAL *sinwrk)
 {
     REAL a,b;
  int i,j,k;
- mayer_fht(real,n);
+ mayer_fht(real,n,coswrk,sinwrk);
  for (i=1,j=n-1,k=n/2;i<k;i++,j--) {
   a = real[i];
   b = real[j];
@@ -409,7 +370,7 @@ void mayer_realfft(int n, REAL *real)
  }
 }
 
-void mayer_realifft(int n, REAL *real)
+void mayer_realifft(int n, REAL *real, REAL *coswrk, REAL *sinwrk)
 {
     REAL a,b;
  int i,j,k;
@@ -419,5 +380,5 @@ void mayer_realifft(int n, REAL *real)
   real[j] = (a-b);
   real[i] = (a+b);
  }
- mayer_fht(real,n);
+ mayer_fht(real,n,coswrk,sinwrk);
 }

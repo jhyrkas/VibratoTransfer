@@ -43,7 +43,7 @@ public:
     ~Butterworth(){
     }
     
-    static std::vector <complex_double> prototypeAnalogLowPass(int filterOrder);
+    std::vector <complex_double> prototypeAnalogLowPass(int filterOrder);
     
     bool loPass(double fs, double f1, double f2, int filterOrder,
                 std::vector <Biquad> & coeffs, double & overallGain){
