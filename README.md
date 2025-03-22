@@ -10,7 +10,7 @@ applied from the target signal and make-up gain.
 When the target signal is quiet or has an unstable fundamental frequency, no vibrato will be applied to the input. 
 
 The plug-in operates with a base latency of 512 samples between the input and output
-signal even when no vibrato is being applied. Latency can increase or decreaes as vibrato is applied due to
+signal even when no vibrato is being applied. Latency can increase or decrease as vibrato is applied due to
 the vibrato patterns in the target signal.
 
 The algorithms in this plug-in are described in a previously published and upcoming research paper. The plug-in
